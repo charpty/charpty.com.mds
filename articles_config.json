@@ -1,0 +1,15 @@
+[
+  {
+    "name": "openresty-install-ubuntu",
+    "title": "Ubuntu 平台下OpenResty的安装",
+    "tags": "openresty nginx",
+    "summary": "我们首先要在[官网](http://openresty.org/)下载OpenResty的源码包。官网上会提供很多的版本，各个版本有什么不同也会有说明，我们可以按需选择下载。笔者选择下载的源码包为ngx_openresty-1.9.3.1.tar.gz",
+    "coverImage": "",
+    "groupName": "Nginx",
+    "creator": "charpty",
+    "creationDate": "2017-08-28 22:39:02",
+    "modificationDate": "2017-08-28 22:39:02",
+    "displayOrder": 100
+  }
+]
+
