@@ -1,17 +1,5 @@
 [
   {
-    "name": "openresty-install-ubuntu",
-    "title": "Ubuntu 平台下OpenResty的安装",
-    "tags": "openresty nginx",
-    "summary": "我们首先要在[官网](http://openresty.org/)下载OpenResty的源码包。官网上会提供很多的版本，各个版本有什么不同也会有说明，我们可以按需选择下载。笔者选择下载的源码包为ngx_openresty-1.9.3.1.tar.gz",
-    "coverImage": "",
-    "groupName": "Nginx",
-    "creator": "charpty",
-    "creationDate": "2015-12-16 00:00:00",
-    "modificationDate": "2015-12-16 00:00:00",
-    "displayOrder": 100
-  },
-  {
     "name": "redis4.0-sds",
     "title": "Redis4.0源码解析--动态字符串SDS",
     "tags": "Redis 源码解析 SDS",
@@ -22,6 +10,17 @@
     "creationDate": "2017-07-01 00:00:00",
     "modificationDate": "2017-07-01 00:00:00",
     "displayOrder": 100
+  },
+  {
+    "name": "redis4.0-struct-list",
+    "title": "Redis4.0源码解析--3种线性表",
+    "tags": "Redis 源码解析 线性表",
+    "summary": "上一章讲了SDS动态字符串，大概讲了看的方向，其实更深层次的还是要请读者自己看源码，我将源码加上了注释，这样大家看起来也更加的方便，本文讲Redis中的链表",
+    "coverImage": "",
+    "groupName": "Redis",
+    "creator": "charpty",
+    "creationDate": "2017-07-06 00:00:00",
+    "modificationDate": "2017-07-06 00:00:00",
+    "displayOrder": 100
   }
 ]
-

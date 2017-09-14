@@ -1,0 +1,14 @@
+[
+  {
+    "name": "nginx-debug-worker",
+    "title": "使用gdb调试Nginx worker进程",
+    "tags": "gdb nginx",
+    "summary": "在开发Nginx模块或者遇到难以解决的Nginx配置问题时，不得不通过调试手段来找出问题所在，本文通过在Linux系统上使用gdb工具来演示如何调试运行中的Nginx进程，本文只关心Nginx的实际执行者--worker进程 首先你需要编译出带有调试信息的可执行文件和.o文件。 获得Nginx源码之后，通过我们熟悉的```configure```命令指定稍后make时需带有debug信息。 之后直接调用相应命令编译Nginx源码即可 ```shell make ``` 此时，在源码录下生成了一个objs目录，",
+    "coverImage": "",
+    "groupName": "Nginx",
+    "creator": "charpty",
+    "creationDate": "2016-01-10 00:00:00",
+    "modificationDate": "2016-01-10 00:00:00",
+    "displayOrder": 100
+  }
+]
