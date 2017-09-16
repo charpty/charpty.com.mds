@@ -14,15 +14,32 @@ article_sql_format = "INSERT INTO `ARTICLE` (`NAME`,`TITLE`,`TAG`,`SUMMARY`,`COV
 key_config_file_path = "file_path"
 
 
+def be_success_green(text):
+    return "\033[92m%s\033[0m" % str(text)
+
+
+def be_warning_yellow(text):
+    return "\033[93m%s\033[0m" % str(text)
+
+
 def log_warn(message):
     print "[WARN] %s" % message
+
+
+def check_file(filename):
+    if filename.endswith(".md"):
+        return True
+    if filename.endswith(".json"):
+        return True
+    return False
 
 
 def get_files_dict(root_dir="articles"):
     files_dict = {}
     for root, dirs, files in os.walk(root_dir):
         for name in files:
-            files_dict[str(name)] = os.path.join(root, name)
+            if check_file(name):
+                files_dict[str(name)] = os.path.join(root, name)
     return files_dict
 
 
@@ -79,9 +96,12 @@ def check_config(config):
 
 def generate_sql_list(files_dict, configs_dict):
     sql_list = []
+    generated_articles = []
+    md_files = []
     for key in sorted(files_dict.keys()):
         if not key.endswith(".md"):
             continue
+        md_files.append(key)
         name = key[:-3]
         if name not in configs_dict:
             log_warn("can not find config for '%s'" % key)
@@ -105,8 +125,22 @@ def generate_sql_list(files_dict, configs_dict):
                 clean_md_content(mdFile.read()), group_name_, creator_,
                 creation_date_,
                 modification_date_, display_order_)
+            generated_articles.append("name = %-35s title = %s" % (name, title_))
             sql_list.append(sql)
-    return sql_list
+    return sql_list, generated_articles, md_files
+
+
+def print_generated_info(files_dict, configs_dict, generated_articles, md_files):
+    total_file_size = len(files_dict)
+    md_file_size = len(md_files)
+    config_file_size = len(configs_dict)
+    final_sql_size = len(generated_articles)
+    summary = "total file is %s, markdown file is %s, final generated sql is %s, configs is %s" \
+              % (total_file_size, md_file_size, be_success_green(final_sql_size), be_success_green(config_file_size))
+    print summary
+    print " ## There is the details:"
+    for info in generated_articles:
+        print "  " + info
 
 
 def print_result_sql(sql_list):
@@ -117,7 +151,12 @@ def print_result_sql(sql_list):
 def main():
     files_dict = get_files_dict()
     configs_dict = get_configs_dict(files_dict)
-    sql_list = generate_sql_list(files_dict, configs_dict)
+    sql_list, generated_articles, md_files = generate_sql_list(files_dict, configs_dict)
+    print_generated_info(files_dict, configs_dict, generated_articles, md_files)
+    print("############################################################################################")
+    print("*************************************RESULT SQL*********************************************")
+    print("############################################################################################")
+    print
     print_result_sql(sql_list)
 
 
