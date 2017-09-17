@@ -9,8 +9,8 @@ reload(sys)
 sys.setdefaultencoding('utf8')
 
 article_sql_format = "INSERT INTO `ARTICLE` (`NAME`,`TITLE`,`TAG`,`SUMMARY`,`COVER_IMAGE`,`CONTENT`," \
-                     "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`" \
-                     ") VALUES ('%s','%s','%s','%s','%s','%s','%s','%s','%s','%s',%d );";
+                     "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`,`WORD_COUNT`" \
+                     ") VALUES ('%s','%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);";
 key_config_file_path = "file_path"
 
 
@@ -114,17 +114,18 @@ def generate_sql_list(files_dict, configs_dict):
             title_ = config["title"]
             tags_ = config["tags"]
             summary_ = config["summary"]
-            image_ = config["coverImage"]
+            cover_image_ = config["coverImage"]
+            content = clean_md_content(mdFile.read())
             group_name_ = config["groupName"]
             creator_ = config["creator"]
             creation_date_ = config["creationDate"]
             modification_date_ = config["modificationDate"]
             display_order_ = config["displayOrder"]
+            word_count_ = len(content)
             sql = article_sql_format % (
-                name, title_, tags_, summary_, image_,
-                clean_md_content(mdFile.read()), group_name_, creator_,
-                creation_date_,
-                modification_date_, display_order_)
+                name, title_, tags_, summary_, cover_image_,
+                content, group_name_, creator_,
+                creation_date_, modification_date_, display_order_, word_count_)
             generated_articles.append("name = %-35s title = %s" % (name, title_))
             sql_list.append(sql)
     return sql_list, generated_articles, md_files
