@@ -10,5 +10,29 @@
     "creationDate": "2016-01-10 00:00:00",
     "modificationDate": "2016-01-10 00:00:00",
     "displayOrder": 100
+  },
+  {
+    "name": "nginx-macro-to-ngx-tolower",
+    "title": "Nginx宏--ngx_tolower",
+    "tags": "nginx",
+    "summary": "今天说一个简单的Nginx宏，在Nginx中提供了一个将单个字符转换为小写的宏。逻辑比较简单，如果是属于大写字母，则通过位运算得到对应小写字母",
+    "coverImage": "",
+    "groupName": "Nginx",
+    "creator": "charpty",
+    "creationDate": "2016-01-01 00:00:00",
+    "modificationDate": "2016-01-01 00:00:00",
+    "displayOrder": 100
+  },
+  {
+    "name": "nginx-struct-string",
+    "title": "Nginx的数据结构--字符串",
+    "tags": "nginx",
+    "summary": "考虑到跨平台、高效率、统一规范，Nginx封装了许多的数据结构，大多数都是我们在其他开发项目中经常用到的一些，当然还有一些复杂的容器，笔者每篇文章会对其中一至两个点进行分析和练习讲解",
+    "coverImage": "",
+    "groupName": "Nginx",
+    "creator": "charpty",
+    "creationDate": "2015-12-21 00:00:00",
+    "modificationDate": "2015-12-21 00:00:00",
+    "displayOrder": 100
   }
 ]
