@@ -68,7 +68,9 @@ def get_configs_dict(files_dict):
 
 def clean_md_content(text):
     text = text.replace('\n', '\\n')
-    text = text.replace('\'', '\\')
+    text = text.replace('\'', '\\\'')
+    # for line ending with '\'
+    text = text.replace('\\\\n', '\\n')
     return text
 
 
