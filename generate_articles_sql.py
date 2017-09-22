@@ -8,9 +8,9 @@ import json
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-article_sql_format = "INSERT INTO `ARTICLE` (`NAME`,`TITLE`,`TAG`,`SUMMARY`,`COVER_IMAGE`,`CONTENT`," \
+article_sql_format = "INSERT INTO `ARTICLE` (`NAME`,`TYPE`,`TITLE`,`TAG`,`SUMMARY`,`COVER_IMAGE`,`CONTENT`," \
                      "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`,`WORD_COUNT`" \
-                     ") VALUES ('%s','%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);";
+                     ") VALUES ('%s',%d,'%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);";
 key_config_file_path = "file_path"
 
 
@@ -113,6 +113,9 @@ def generate_sql_list(files_dict, configs_dict):
             if not check_config(config):
                 log_warn("config file is invalid: name=%s, file_path=%s" % (name, config[key_config_file_path]))
                 continue
+            type_ = 10
+            if "type" in config:
+                type_ = config["type"]
             title_ = config["title"]
             tags_ = config["tags"]
             summary_ = config["summary"]
@@ -125,7 +128,7 @@ def generate_sql_list(files_dict, configs_dict):
             display_order_ = config["displayOrder"]
             word_count_ = len(content)
             sql = article_sql_format % (
-                name, title_, tags_, summary_, cover_image_,
+                name, type_, title_, tags_, summary_, cover_image_,
                 content, group_name_, creator_,
                 creation_date_, modification_date_, display_order_, word_count_)
             generated_articles.append("name = %-35s title = %s" % (name, title_))
