@@ -167,7 +167,7 @@ Redis是非常注意节约内存的，极高的内存利用率是Redis的一大�
 
  对于len值编码的设定一共分为9种，我们通过宏```ZIP_DECODE_LENGTH```来了解下
 
- ``` c
+``` c
  /*
  * 解析指定到entry节点并将编码类型，存储长度的元素的长度，列表长度的值设置到对应的变量中
  * 步骤如下
@@ -209,7 +209,7 @@ define ZIP_DECODE_LENGTH(ptr, encoding, lensize, len) do {                    \
         (len) = zipIntSize(encoding);                                          \
     }                                                                          \
 } while(0);
- ```
+```
  根据不同的编码类型，Redis使用尽可能小的内存对其进行存储，了解了存储结构，基本上就对压缩列表```ziplist```了解了大半了，接下来我们看下它的插入操作
 
 ### 2.1 压缩列表插入值
