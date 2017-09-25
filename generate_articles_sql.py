@@ -4,6 +4,7 @@
 import sys
 import os
 import json
+import utils
 
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -12,18 +13,6 @@ article_sql_format = "INSERT INTO `ARTICLE` (`NAME`,`TYPE`,`TITLE`,`TAG`,`SUMMAR
                      "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`,`WORD_COUNT`" \
                      ") VALUES ('%s',%d,'%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);";
 key_config_file_path = "file_path"
-
-
-def be_success_green(text):
-    return "\033[92m%s\033[0m" % str(text)
-
-
-def be_warning_yellow(text):
-    return "\033[93m%s\033[0m" % str(text)
-
-
-def log_warn(message):
-    print "[WARN] %s" % message
 
 
 def check_file(filename):
@@ -106,12 +95,12 @@ def generate_sql_list(files_dict, configs_dict):
         md_files.append(key)
         name = key[:-3]
         if name not in configs_dict:
-            log_warn("can not find config for '%s'" % key)
+            utils.log_warn("can not find config for '%s'" % key)
             continue
         config = configs_dict[name]
         with open(files_dict.get(key), 'r') as mdFile:
             if not check_config(config):
-                log_warn("config file is invalid: name=%s, file_path=%s" % (name, config[key_config_file_path]))
+                utils.log_warn("config file is invalid: name=%s, file_path=%s" % (name, config[key_config_file_path]))
                 continue
             type_ = 10
             if "type" in config:
@@ -142,7 +131,8 @@ def print_generated_info(files_dict, configs_dict, generated_articles, md_files)
     config_file_size = len(configs_dict)
     final_sql_size = len(generated_articles)
     summary = "total file is %s, markdown file is %s, final generated sql is %s, configs is %s" \
-              % (total_file_size, md_file_size, be_success_green(final_sql_size), be_success_green(config_file_size))
+              % (total_file_size, md_file_size, utils.be_success_green(final_sql_size),
+                 utils.be_success_green(config_file_size))
     print summary
     print " ## There is the details:"
     for info in generated_articles:

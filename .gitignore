@@ -2,3 +2,5 @@ articles.sql
 .idea
 test.py
 test.md
+*.pwd
+*.pyc
