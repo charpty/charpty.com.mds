@@ -13,6 +13,8 @@ article_sql_format = "INSERT INTO `ARTICLE` (`NAME`,`TYPE`,`TITLE`,`TAG`,`SUMMAR
                      "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`,`WORD_COUNT`" \
                      ") VALUES ('%s',%d,'%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);";
 key_config_file_path = "file_path"
+pattern_image_link = "-image]("
+default_image_host = "http://s.charpty.com/"
 
 
 def check_file(filename):
@@ -39,6 +41,8 @@ def read_config(file_path, configs_dict):
             if "name" not in c:
                 raise ValueError("config should have property 'name', file: %s" % file_path)
             name = c["name"]
+            if "imageHost" not in c:
+                c["imageHost"] = default_image_host
             if name in configs_dict:
                 raise ValueError("config name '%s' already in dict: first: %s, current: %s"
                                  % (name, configs_dict[name][key_config_file_path], file_path))
@@ -55,11 +59,29 @@ def get_configs_dict(files_dict):
     return configs_dict
 
 
-def clean_md_content(text):
+def turn_image_link(text, image_host):
+    start = 0
+    p_len = len(pattern_image_link)
+    while (start + 1) < len(text):
+        index = text.find(pattern_image_link, start + 1)
+        if index < 0:
+            break
+        text = text[:index + p_len] + image_host + text[index + p_len:]
+        start = index
+    return text
+
+
+def escape_sql(text):
     text = text.replace('\n', '\\n')
     text = text.replace('\'', '\\\'')
     # for line ending with '\'
     text = text.replace('\\\\n', '\\n')
+    return text
+
+
+def clean_md_content(text, image_host):
+    text = escape_sql(text)
+    text = turn_image_link(text, image_host)
     return text
 
 
@@ -109,7 +131,7 @@ def generate_sql_list(files_dict, configs_dict):
             tags_ = config["tags"]
             summary_ = config["summary"]
             cover_image_ = config["coverImage"]
-            content = clean_md_content(mdFile.read())
+            content = clean_md_content(mdFile.read(), config["imageHost"])
             group_name_ = config["groupName"]
             creator_ = config["creator"]
             creation_date_ = config["creationDate"]
