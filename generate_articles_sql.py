@@ -13,7 +13,9 @@ article_sql_format = "INSERT INTO `ARTICLE` (`NAME`,`TYPE`,`TITLE`,`TAG`,`SUMMAR
                      "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`,`WORD_COUNT`" \
                      ") VALUES ('%s',%d,'%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);";
 key_config_file_path = "file_path"
-pattern_image_link = "-image]("
+pattern_image_link_start = "!["
+pattern_image_link_end = "]("
+pattern_image_link_next_start = ")"
 default_image_host = "http://s.charpty.com/"
 
 
@@ -61,13 +63,24 @@ def get_configs_dict(files_dict):
 
 def turn_image_link(text, image_host):
     start = 0
-    p_len = len(pattern_image_link)
+    len_start = len(pattern_image_link_start)
+    len_end = len(pattern_image_link_end)
+
     while (start + 1) < len(text):
-        index = text.find(pattern_image_link, start + 1)
-        if index < 0:
+        index_start = text.find(pattern_image_link_start, start)
+        if index_start < 0:
             break
-        text = text[:index + p_len] + image_host + text[index + p_len:]
-        start = index
+        index_end = text.find(pattern_image_link_end, index_start + len_start + 1)
+        desc = text[index_start + len_start:index_end]
+        index_next = text.find(pattern_image_link_next_start, index_end + len_end + 1)
+        url = text[index_end + len_end:index_next]
+        valid_url = 100 > len(url) > 5 and "[" not in url and "]" not in url and "(" not in url and ")" not in url
+        valid_desc = len(desc) < 30 and "[" not in desc and "]" not in desc and "(" not in desc and ")" not in desc
+        if valid_desc and valid_url:
+            text = text[:index_end + len_end] + image_host + text[index_end + len_end:]
+            start = index_next + 1
+        else:
+            start = index_start + 1
     return text
 
 
