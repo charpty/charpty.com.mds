@@ -74,7 +74,7 @@ def turn_image_link(text, image_host):
         desc = text[index_start + len_start:index_end]
         index_next = text.find(pattern_image_link_next_start, index_end + len_end + 1)
         url = text[index_end + len_end:index_next]
-        valid_url = 100 > len(url) > 5 and "[" not in url and "]" not in url and "(" not in url and ")" not in url
+        valid_url = 255 > len(url) > 5 and "[" not in url and "]" not in url and "(" not in url and ")" not in url
         valid_desc = len(desc) < 30 and "[" not in desc and "]" not in desc and "(" not in desc and ")" not in desc
         if valid_desc and valid_url:
             text = text[:index_end + len_end] + image_host + text[index_end + len_end:]

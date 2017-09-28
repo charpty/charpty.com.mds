@@ -1,0 +1,15 @@
+[
+  {
+    "name": "jvm-classloading-load",
+    "type": 10,
+    "title": "JVM类加载1-加载",
+    "tags": "jvm classloading",
+    "summary": "JVM(本系列统指sun的HotSpot虚拟机1.7版本实现)加载类一共分为5步，分别是：1、加载 2、验证 3、准备 4、解析 5、初始化，简要的流程图如下",
+    "coverImage": "",
+    "groupName": "jvm",
+    "creator": "charpty",
+    "creationDate": "2017-04-06 00:00:00",
+    "modificationDate": "2017-04-06 00:00:00",
+    "displayOrder": 100
+  }
+]
