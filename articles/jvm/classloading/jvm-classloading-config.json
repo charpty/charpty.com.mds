@@ -11,5 +11,18 @@
     "creationDate": "2017-04-06 00:00:00",
     "modificationDate": "2017-04-06 00:00:00",
     "displayOrder": 100
+  },
+  {
+    "name": "jvm-classloading-prepare",
+    "type": 10,
+    "title": "JVM类加载3-准备",
+    "tags": "jvm classloading",
+    "summary": "在前两篇文章中，我们讲到JVM已经把class文件加载为运行时数据结构并做了严格的校验，此时的```instanceKlass```需要进行进一步的数据上的处理才能交付使用，准备阶段就是其中相对简单的一步",
+    "coverImage": "",
+    "groupName": "jvm",
+    "creator": "charpty",
+    "creationDate": "2017-05-07 00:00:00",
+    "modificationDate": "2017-05-07 00:00:00",
+    "displayOrder": 100
   }
 ]

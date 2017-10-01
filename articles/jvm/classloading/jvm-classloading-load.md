@@ -1,7 +1,7 @@
 > 笔者博客地址：https://charpty.com
 
 JVM(本系列统指sun的HotSpot虚拟机1.7版本实现)加载类一共分为5步，分别是：1、加载 2、验证 3、准备 4、解析 5、初始化，简要的流程图如下
-![类加载简述](/images/jvm/classload/loading/classloading_steps_simple_description.jpeg)
+![类加载简述](/images/jvm/classloading/load/classloading_steps_simple_description.jpeg)
 
 “加载”是“类加载”的第一个步骤，“类加载”的总指挥是```ClassLoader```，加载步骤大多都是异步的，各个阶段都有交叉进行甚至仅在需要时才进行（如晚解析），不像图中这样规矩。但按照JVM规范中指明**"A class or interface is completely loaded before it is linked"**，所以虽然HotSpot实现有特性，但“加载”可以认为是同步的，且只有当“加载”步骤完成后才能进行后续动作。
 
@@ -45,13 +45,13 @@ virtual ClassFileStream* open_stream(const char* name) = 0;
 标志用于识别类或者接口层次的访问信息，例如：该Class是类还是接口，是否被public修饰，是否是抽象类
  4. 获取this类全限定名
  读取当前类索引，并在常量池中找到当前类的全限定名，前面在读取常量池信息时，解析器获得了一个常量池句柄，可以通过它和自身的```index```获取本类的在常量池中存储的全限定名
-![获取常量池句柄](/images/jvm/classload/loading/get_current_class_index.png)
+![获取常量池句柄](/images/jvm/classloading/load/get_current_class_index.png)
 后面会对这个名称做一些基本的校验，正如图中所见，如果没问题则赋值给本地解析器变量以便后续处理
  5. 获取父类以及接口信息
  如果有继承父类或者实现接口，那么父类或接口需要被先加载，如果已经加载则获取它们的句柄记录到本类中，过程中会做一些简单的名称之类的校验
  6. 读取字段信息和方法信息
  读取字段信息存储到typeArrayHandle中，读取实例方法信息并存储到objArrayHandle中，这两部分信息在后续步骤都会填入instanceKlass对象中，成为类信息的一部分。
-![读取字段和方法信息](/images/jvm/classload/loading/parse_field_and_method.png)
+![读取字段和方法信息](/images/jvm/classloading/load/parse_field_and_method.png)
  字段和方法信息读取完成之后，还会进行排序以便后续对Class大小进行评估，需要注意的是当一个Java中的Class在被加载之后，它的大小就是固定的了。
 
 ### 三、生成java.lang.Class对象
