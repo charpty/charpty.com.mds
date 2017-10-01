@@ -1,7 +1,7 @@
 > 笔者博客地址：https://charpty.com
 
 JVM(本系列统指sun的HotSpot虚拟机1.7版本实现)加载类一共分为5步，分别是：1、加载 2、验证 3、准备 4、解析 5、初始化，简要的流程图如下
-![类加载简述](/images/jvm/classloading/load/classloading_steps_simple_description.jpeg)
+![类加载简述](/images/jvm/classloading/load/classloading_steps_simple_description.png)
 
 “加载”是“类加载”的第一个步骤，“类加载”的总指挥是```ClassLoader```，加载步骤大多都是异步的，各个阶段都有交叉进行甚至仅在需要时才进行（如晚解析），不像图中这样规矩。但按照JVM规范中指明**"A class or interface is completely loaded before it is linked"**，所以虽然HotSpot实现有特性，但“加载”可以认为是同步的，且只有当“加载”步骤完成后才能进行后续动作。
 
