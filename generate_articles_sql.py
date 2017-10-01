@@ -65,7 +65,7 @@ def turn_image_link(text, image_host):
     start = 0
     len_start = len(pattern_image_link_start)
     len_end = len(pattern_image_link_end)
-
+    endswith_dash = default_image_host.endswith("/");
     while (start + 1) < len(text):
         index_start = text.find(pattern_image_link_start, start)
         if index_start < 0:
@@ -77,7 +77,11 @@ def turn_image_link(text, image_host):
         valid_url = 255 > len(url) > 5 and "[" not in url and "]" not in url and "(" not in url and ")" not in url
         valid_desc = len(desc) < 30 and "[" not in desc and "]" not in desc and "(" not in desc and ")" not in desc
         if valid_desc and valid_url:
-            text = text[:index_end + len_end] + image_host + text[index_end + len_end:]
+            d_len = 0
+            if endswith_dash and url.startswith("/"):
+                d_len = 1
+            text = text[:index_end + len_end] + image_host + text[index_end + len_end + d_len:]
+            # just make start > index_start
             start = index_next + 1
         else:
             start = index_start + 1
