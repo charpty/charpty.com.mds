@@ -1,0 +1,15 @@
+[
+  {
+    "name": "spring-httpinvoker-principle",
+    "type": 10,
+    "title": "HttpInvoker实现原理",
+    "tags": "Spring HttpInvoker",
+    "summary": "HttpInvoker是常用的Java同构系统之间方法调用实现方案，是众多Spring项目中的一个子项目。顾名思义，它通过HTTP通信即可实现两个Java系统之间的远程方法调用，使得系统之间的通信如同调用本地方法一般",
+    "coverImage": "",
+    "groupName": "Spring",
+    "creator": "charpty",
+    "creationDate": "2017-01-26 00:00:00",
+    "modificationDate": "2017-01-26 00:00:00",
+    "displayOrder": 100
+  }
+]

@@ -1,0 +1,15 @@
+[
+  {
+    "name": "spring-factory-method-design-patterns",
+    "type": 10,
+    "title": "Spring中的设计模式--工厂方法模式",
+    "tags": "Spring 设计模式",
+    "summary": "通过一个静态方法来创建实例，这种方式在代码中比较常见，但这并不是我们今天要说的工厂模式，它只是一个“静态工厂方法”。个人觉得很难给模式一个语句上的定义，因为这些模式本身只是一些帮助我们养成好的代码习惯的一些建议",
+    "coverImage": "",
+    "groupName": "Spring设计模式",
+    "creator": "charpty",
+    "creationDate": "2017-01-02 00:00:00",
+    "modificationDate": "2017-01-02 00:00:00",
+    "displayOrder": 100
+  }
+]

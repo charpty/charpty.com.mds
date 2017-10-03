@@ -159,7 +159,7 @@ def generate_sql_list(files_dict, configs_dict):
                 name, type_, title_, tags_, summary_, cover_image_,
                 content, group_name_, creator_,
                 creation_date_, modification_date_, display_order_, word_count_)
-            generated_articles.append("name = %-35s title = %s" % (name, title_))
+            generated_articles.append("name = %-45s title = %s" % (name, title_))
             sql_list.append(sql)
     return sql_list, generated_articles, md_files
 
