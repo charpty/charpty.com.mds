@@ -1,6 +1,6 @@
 [
   {
-    "name": "redis4-0-sds",
+    "name": "redis4-0-struct-sds",
     "type": 10,
     "title": "Redis4.0源码解析--动态字符串SDS",
     "tags": "Redis 源码解析 SDS",
@@ -23,6 +23,19 @@
     "creator": "charpty",
     "creationDate": "2017-07-06 00:00:00",
     "modificationDate": "2017-07-06 00:00:00",
+    "displayOrder": 100
+  },
+  {
+    "name": "redis4-0-struct-dict",
+    "type": 10,
+    "title": "Redis4.0源码解析--字典",
+    "tags": "Redis 源码解析 字典 哈希表",
+    "summary": "",
+    "coverImage": "",
+    "groupName": "Redis",
+    "creator": "charpty",
+    "creationDate": "2017-10-03 00:00:00",
+    "modificationDate": "2017-10-03 00:00:00",
     "displayOrder": 100
   }
 ]
