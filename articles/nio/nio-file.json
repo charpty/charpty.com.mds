@@ -1,0 +1,15 @@
+[
+  {
+    "name": "read-string-file-and-sort",
+    "type": 10,
+    "title": "读一个大的随机字符串行文件并排序输出",
+    "tags": "nio sort",
+    "summary": "起源于面试的时候被问到一个问题，其实整体思想是比较简单的，但实际实现起来在很多细节上面可以优化处理。题目描述：```读一个有几千万行的字符串文本，每一行都是字母和数字组成，每一行不超过256个字节，读出来之后将其排序输出```",
+    "coverImage": "",
+    "groupName": "nio",
+    "creator": "charpty",
+    "creationDate": "2018-01-02 00:00:00",
+    "modificationDate": "2018-01-02 00:00:00",
+    "displayOrder": 100
+  }
+]
