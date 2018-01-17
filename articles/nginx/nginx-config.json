@@ -37,5 +37,19 @@
     "creationDate": "2015-12-21 00:00:00",
     "modificationDate": "2015-12-21 00:00:00",
     "displayOrder": 100
+  },
+  ,
+  {
+    "name": "nginx-security-manual",
+    "type": 10,
+    "title": "Nginx安全手册",
+    "tags": "nginx",
+    "summary": "Nginx功能日益增强，系统级别、网络级别对功能日益增多，当然也带来了不少的安全隐患问题，如果不加注意，很容易被人利用，安全无小事，出了问题定是追悔莫及",
+    "coverImage": "",
+    "groupName": "Nginx",
+    "creator": "charpty",
+    "creationDate": "2018-01-17 00:00:00",
+    "modificationDate": "2018-01-17 00:00:00",
+    "displayOrder": 100
   }
 ]
