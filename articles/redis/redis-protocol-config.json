@@ -1,0 +1,15 @@
+[
+  {
+    "name": "redis-protocol-resp",
+    "type": 10,
+    "title": "Redis中C/S交互传输格式详解",
+    "tags": "Redis 源码解析 RESP",
+    "summary": "```RESP```全称为```Redis Serialization Protocol```，是Redis的客户端与服务端进行通信的标准协议。客户端只要按照规则发送简单的几行字符串，服务端的响应同样也是简单的几行字符串，```RESP```看名字就是为```Redis```量身定制的，但是官方也建议可以扩展到其它场景使用。",
+    "coverImage": "",
+    "groupName": "Redis",
+    "creator": "charpty",
+    "creationDate": "2018-02-12 00:00:00",
+    "modificationDate": "2018-02-12 00:00:00",
+    "displayOrder": 100
+  }
+]
