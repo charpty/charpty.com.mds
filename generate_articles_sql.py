@@ -89,10 +89,17 @@ def turn_image_link(text, image_host):
 
 
 def escape_sql(text):
-    text = text.replace('\n', '\\n')
-    text = text.replace('\'', '\\\'')
     # for line ending with '\'
     text = text.replace('\\\\n', '\\n')
+    # for \r\n
+    text = text.replace('\\r\\n', '\\\\r\\\\n')
+    # for '\n'
+    text = text.replace('\'\\n\'', '\'\\\\n\'')
+    # for '\r'
+    text = text.replace('\'\\r\'', '\'\\\\r\'')
+
+    text = text.replace('\n', '\\n')
+    text = text.replace('\'', '\\\'')
     return text
 
 
