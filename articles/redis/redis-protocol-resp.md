@@ -1,4 +1,5 @@
-> 笔者博客地址： https://charpty.com/blog
+> 本文地址：https://charpty.com/article/redis-protocol-resp  
+> 笔者博客地址： https://charpty.com
 
 
 为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
@@ -64,8 +65,9 @@
 举个例子：```"*3\r\n:1\r\n:55\r\n$4\r\nlike\r\n"```  
 这个数组一共3个元素，这个可以从第一行```*3```中知道，第一个元素是一个整数```1```，整数的标记位是```':'```，第二个元素也是个整数，值为```55```，第三个元素则是一个```Bulk Strings```格式，该大字符串一共有4个字节，可以从第四行的```$4```中知道，真实数据值是```like```。
 
-由上可见，```Arrays```格式也就是多个简单格式的组合，数组中的元素的类型可以各不相同，并且，```Arrays```数组是可以**嵌套**的，如下所示，为了展示清楚，我们每个```CRLF(\r\n)```都换下行。  
-```
+由上可见，```Arrays```格式也就是多个简单格式的组合，数组中的元素的类型可以各不相同，并且，```Arrays```数组是可以**嵌套**的，如下所示，为了展示清楚，我们每个```CRLF(\r\n)```都换下行。
+    
+``` cpp
 *3\r\n  
 *3\r\n  
 :1\r\n  
@@ -107,7 +109,7 @@ like\r\n
 
 内置命令并不是一种标准格式，它更多的是一种解析手段，主要是为了方便没有```Redis```客户端的场景，手里只有```nc```命令或者```telnet```，这个时候让用户手敲一段```*2\r\n$3\r\nGET\r\n$1\r\na\r\n```来实现```GET a```实在有点强人所难。  
 所以```Redis```实现了一种所谓内置命令的形式的格式，让用户直接输入```GET a```也依然能够返回结果信息。  
-几乎所有命令都支持以内置命令形式发送并解析，大多数常用且简单的命令，像```SET``、```GET```、```LPUSH```、```PING```等都是支持的，唯一的区别是内置命令支持的长度是有限的，一次性发送过长的字节可能会丢失。  
+几乎所有命令都支持以内置命令形式发送并解析，大多数常用且简单的命令，如```SET```、```GET```、```LPUSH```、```PING```等都是支持的，唯一的区别是内置命令支持的长度是有限的，一次性发送过长的字节可能会丢失。  
 
 所以发送命令就两种形式，一种是元素为```Bulk Strings```的数组，一种是内置命令。  
 
@@ -115,17 +117,19 @@ like\r\n
 ## 协议实现  
 
 协议```RESP```在```Redis```并没有个专门的```C```文件实现，而是主要包含在网络字节流处理过程中，这也是由于```RESP```本身足够简洁，不需要一个专门的解释器。  
-所以也就是说主要实现都在```networking.c```文件中，实现实现分为两部分，一部分是接收字节流请求，并处理为```Redis```内部的数据结构，供具体命令实现函数调用；另一部分是将```Redis```内部的数据结构转换为字节流输出到客户端。  
+所以也就是说主要实现都在```networking.c```文件中，实现分为两部分，一部分是接收字节流请求，并处理为```Redis```内部的数据结构，供具体命令实现函数调用；另一部分是将```Redis```内部的数据结构转换为字节流输出到客户端。  
 接收请求的处理函数的名称大多为```process*```，响应客户端的处理函数的名称大多为```addReply*```。 
 
 ### 接收请求并解析
-处理请求的函数入口是```processInputBuffer()```，它由两条分支：内置命令？```processInlineBuffer()```:```processMultibulkBuffer()```。也就是通过区分字节流第一个字符是不是```*```(```Arrays```格式标志)来调用不同的函数解析请求。 
+处理请求的函数入口是```processInputBuffer()```，它有两条分支：内置命令？```processInlineBuffer()```:```processMultibulkBuffer()```。也就是通过区分字节流第一个字符是不是```*```(```Arrays```格式标志)来调用不同的函数解析请求。
+
+当第一个字节是```*```时当普通命令处理，其它则都认为是内置命令。  
 
 #### 内置命令解析
 内置命令解析由```processInlineBuffer()```函数实现   
 
 
-``` C
+``` cpp
 /*
  * 尝试解析字节流为内置命令，最重要的是解析出第一个单词(命令)
  * 解析成功返回0，解析失败或还未读取完成返回-1
@@ -198,7 +202,7 @@ return C_OK;
 #### 普通命令解析
 普通命令解析由```processMultibulkBuffer()```函数实现     
 
-``` C
+``` cpp
 
 /*
  * 解析普通Redis命令，普通命令格式为: Bulk String数组，这是RESP协议中的一种标准格式
@@ -210,7 +214,6 @@ int processMultibulkBuffer(client *c) {
 
 // 外循环的第一次读取字节流，此时需要获取数组中元素的个数
 if (c->multibulklen == 0) {
-    /* The client should have been reset */
     // 都还未读取过，c->argc当然是0
     serverAssertWithInfo(c,NULL,c->argc == 0);
 
@@ -243,7 +246,6 @@ if (c->multibulklen == 0) {
     // 整个if逻辑最重要的就是计算出整个数组有多少个元素
     c->multibulklen = ll;
 
-    /* Setup argv array on client structure */
     if (c->argv) zfree(c->argv);
     // 请求数组元素的个数也就是请求参数的个数
     c->argv = zmalloc(sizeof(robj*)*c->multibulklen);
@@ -251,7 +253,6 @@ if (c->multibulklen == 0) {
 
 // 循环处理各个元素，也就是各Bulk Strings
 while(c->multibulklen) {
-/* Read bulk length if unknown */
 // 读取Bulk Strings的实际字符串长度，也就是该元素第一行'$'符号后面的数字
 if (c->bulklen == -1) {
     newline = strchr(c->querybuf+pos,'\r');
@@ -332,7 +333,7 @@ return C_ERR;
 和解析```RESP```传输格式一样，组装响应格式并输出的工作也是在```networking.c```中完成。将已知结构体解析为字节流肯定比从字节流解析出结构体要简单的多，少了很多不可预知性。所以如果不谈不深究网络交互，只将```RESP```传输格式组装还是简单易懂的。
 
 #### 组装Bulk Strings数组结果
-``` C
+``` cpp
 /*
  * 组装Bulk Strings格式输出到客户端
  *
@@ -352,8 +353,8 @@ void addReplyBulkSds(client *c, sds s)  {
 ```
 当比如要想返回一个字符串列表时，只要配合上设置数组长度的函数```addReplyMultiBulkLen()```即可(其实数组也就是开头有一个```*number```表示数组长度)。   
 
-``` C
-先设置好数组的长度
+``` cpp
+// 先设置好数组的长度
 addReplyMultiBulkLen(c,len);
 while(len--) {
       if (输出字符串实际值) {
@@ -370,7 +371,7 @@ while(len--) {
 简单字符串是以'+'号开头，但在```Redis```实现中```Simple Strings```并不全是组装而来的，而是直接输出已经预定好的字符串。像```"+OK\r\n"```、```"+PONG"```这些都是预定义好了的字符串。  
 这些预定义的字符串都存在```server.c```的```sharedObjectsStruct```结构体，属性名为```shared```，它的初始化在```createSharedObjects()```函数中。 
 
-``` C
+``` cpp
 void createSharedObjects(void) {
     shared.crlf = createObject(OBJ_STRING,sdsnew("\r\n"));
     shared.ok = createObject(OBJ_STRING,sdsnew("+OK\r\n"));
