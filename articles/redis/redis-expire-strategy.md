@@ -6,10 +6,16 @@
 > https://github.com/charpty/redis4.0-source-reading
 
 
-## 哈希表基础
+和大多数缓存中间件一样，```Redis```也提供了Key过期策略。
 
 
-## Redis字典存取元素
+## 相关命令
 
 
-## 
+## 相关配置项
+
+
+## 两种过期策略
+
+
+## 过期逻辑代码实现
