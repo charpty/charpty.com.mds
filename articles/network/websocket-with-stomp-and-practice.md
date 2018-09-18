@@ -7,7 +7,7 @@
 
 ## WebSocket协议   
 
-2011成为标准的```WebSocket```协议使得服务端可以随时向客户端推送消息，现在大多数浏览器都已支持，对于即时通讯、消息推送等应用有很大帮助。
+2011年成为标准的```WebSocket```协议使得服务端可以随时向客户端推送消息，现在大多数浏览器都已支持，对于即时通讯、消息推送等应用有很大帮助。
 
 如果有时间，可以看下```WebSocket```的```RFC```：```https://tools.ietf.org/html/rfc6455```，直接翻到```5.2.  Base Framing Protocol```，可以省去很多麻烦。 
  
@@ -218,6 +218,10 @@ CHAT_COMMAND_FORMAT = "[\"SEND\\n" \
                       "content-length:%s\\n\\n" \
                       "{\\\"name\\\":\\\"%s\\\"}\u0000\"]"
 ```
+
+其中建立连接的请求UPGRADE_REQUEST是一切的开始，其中```"Sec-WebSocket-Version"```头表示客户端版本兼容性，目前客户端版本为13，```Sec-WebSocket-Key```则用于安全校验，服务器需返回一个正确的校验后的字符串，双方方能建立连接。
+
+另外可以使用```"Sec-WebSocket-Protocol"```告知服务器客户端能支持哪些通信子协议，若无此header则有服务器自行选择。
 
 
 ### 客户端拼装消息
