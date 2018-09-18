@@ -13,10 +13,10 @@ article_sql_format = "INSERT INTO `ARTICLE` (`NAME`,`TYPE`,`TITLE`,`TAG`,`SUMMAR
                      "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`,`WORD_COUNT`" \
                      ") VALUES ('%s',%d,'%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);";
 key_config_file_path = "file_path"
-pattern_image_link_start = "!["
-pattern_image_link_end = "]("
-pattern_image_link_next_start = ")"
-default_image_host = "http://s.charpty.com/"
+pattern_link_start = "["
+pattern_link_end = "]("
+pattern_link_next_start = ")"
+default_resource_host = "http://s.charpty.com/"
 
 
 def check_file(filename):
@@ -44,7 +44,7 @@ def read_config(file_path, configs_dict):
                 raise ValueError("config should have property 'name', file: %s" % file_path)
             name = c["name"]
             if "imageHost" not in c:
-                c["imageHost"] = default_image_host
+                c["imageHost"] = default_resource_host
             if name in configs_dict:
                 raise ValueError("config name '%s' already in dict: first: %s, current: %s"
                                  % (name, configs_dict[name][key_config_file_path], file_path))
@@ -63,16 +63,16 @@ def get_configs_dict(files_dict):
 
 def turn_image_link(text, image_host):
     start = 0
-    len_start = len(pattern_image_link_start)
-    len_end = len(pattern_image_link_end)
-    endswith_dash = default_image_host.endswith("/");
+    len_start = len(pattern_link_start)
+    len_end = len(pattern_link_end)
+    endswith_dash = default_resource_host.endswith("/");
     while (start + 1) < len(text):
-        index_start = text.find(pattern_image_link_start, start)
+        index_start = text.find(pattern_link_start, start)
         if index_start < 0:
             break
-        index_end = text.find(pattern_image_link_end, index_start + len_start + 1)
+        index_end = text.find(pattern_link_end, index_start + len_start + 1)
         desc = text[index_start + len_start:index_end]
-        index_next = text.find(pattern_image_link_next_start, index_end + len_end + 1)
+        index_next = text.find(pattern_link_next_start, index_end + len_end + 1)
         url = text[index_end + len_end:index_next]
         valid_url = 255 > len(url) > 5 and "[" not in url and "]" not in url and "(" not in url and ")" not in url
         valid_desc = len(desc) < 30 and "[" not in desc and "]" not in desc and "(" not in desc and ")" not in desc

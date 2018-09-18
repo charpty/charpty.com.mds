@@ -35,7 +35,13 @@ def get_oss_config(file_path="ali-oss.pwd"):
         return config
 
 
-def check_image_file(filename):
+def check_file_suffix(filename, suffix):
+    if filename is None:
+        return False
+    for s in suffix:
+        if filename.endswith(s):
+            return True
+    return False
     if filename.endswith(".png"):
         return True
     if filename.endswith(".jpg"):
@@ -47,11 +53,11 @@ def check_image_file(filename):
     return False
 
 
-def get_image_files_list(root_dir="images"):
+def get_file_list(root_dir, suffix=[]):
     files_list = []
     for root, dirs, files in os.walk(root_dir):
         for name in files:
-            if check_image_file(name):
+            if check_file_suffix(name, suffix):
                 files_list.append(os.path.join(root, name))
     return files_list
 
@@ -62,26 +68,31 @@ def get_oss_bucket_handler(config):
     return bucket
 
 
-def upload_images_dir(bucket_handler, files_list):
+def upload_files_dir(bucket_handler, files_list):
     for filename in files_list:
         with open(filename, "r") as fd:
             bucket_handler.put_object(filename, fd)
             print "%s %s" % (utils.be_success_green("success upload file: "), filename)
 
 
-def print_image_files(files_list):
+def print_files(files_list):
     print "total file size is %s" % utils.be_success_green(len(files_list))
 
 
-def main():
-    root_dir = "images"
+def upload_resource(root_dir, suffix=[]):
     config = get_oss_config()
     bucket_handler = get_oss_bucket_handler(config)
-    files_list = get_image_files_list(root_dir)
-    print_image_files(files_list)
+    files_list = get_file_list(root_dir, suffix)
     print "############################################################################"
-    upload_images_dir(bucket_handler, files_list)
+    print "UPLOAD DIR: " + root_dir
+    print_files(files_list)
+    upload_files_dir(bucket_handler, files_list)
     print "############################################################################"
+
+
+def main():
+    upload_resource("images", ['.png', '.bmp', '.jpg', '.gif'])
+    upload_resource("codes", ['.py', '.java', '.c', '.cpp', '.lua', '.go'])
 
 
 if __name__ == '__main__':
