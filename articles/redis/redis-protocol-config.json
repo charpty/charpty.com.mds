@@ -11,5 +11,18 @@
     "creationDate": "2018-02-12 00:00:00",
     "modificationDate": "2018-02-12 00:00:00",
     "displayOrder": 100
+  },
+  {
+    "name": "redis-interview-question",
+    "type": 10,
+    "title": "Redis面试问什么好",
+    "tags": "Redis 面试",
+    "summary": "许多同学都面试过别人或者参加面试，Java开发的面试多多少少会问些Redis的问题，面试官问些什么才能折腾到同学们呢(^^)，同学们又要怎么回答才能让面试官眼前一亮呢",
+    "coverImage": "",
+    "groupName": "Redis",
+    "creator": "charpty",
+    "creationDate": "2018-10-11 00:00:00",
+    "modificationDate": "2018-10-11 00:00:00",
+    "displayOrder": 100
   }
 ]
