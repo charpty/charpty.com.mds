@@ -1,0 +1,15 @@
+[
+  {
+    "name": "mysql-deploy-mode",
+    "type": 10,
+    "title": "MySQL常见部署模式",
+    "tags": "MySQL 运维",
+    "summary": "MySQL是互联网应用非常常用的数据库，根据不同的业务场景和规模阶段，在部署MySQL可以使用不同的模式，它们各有优劣，需要运维架构同学结合业务选择",
+    "coverImage": "",
+    "groupName": "MySQL",
+    "creator": "charpty",
+    "creationDate": "2018-10-12 00:00:00",
+    "modificationDate": "2018-10-12 00:00:00",
+    "displayOrder": 100
+  }
+]
