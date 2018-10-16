@@ -5,6 +5,8 @@ import sys
 import os
 import json
 import utils
+import datetime
+import ntpath
 
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -27,12 +29,20 @@ def check_file(filename):
     return False
 
 
+def clean_suffix(file_name):
+    return file_name[:str(file_name).find(".")]
+
+
+def get_file_name(path):
+    return ntpath.basename(path)
+
+
 def get_files_dict(root_dir="articles"):
     files_dict = {}
     for root, dirs, files in os.walk(root_dir):
         for name in files:
             if check_file(name):
-                files_dict[str(name)] = os.path.join(root, name)
+                files_dict[clean_suffix(name)] = os.path.join(root, name)
     return files_dict
 
 
@@ -54,10 +64,10 @@ def read_config(file_path, configs_dict):
 
 def get_configs_dict(files_dict):
     configs_dict = {}
-    for key in sorted(files_dict.keys()):
-        if not key.endswith("config.json"):
+    for path in sorted(files_dict.values()):
+        if not path.endswith("config.json"):
             continue
-        read_config(files_dict.get(key), configs_dict)
+        read_config(path, configs_dict)
     return configs_dict
 
 
@@ -134,20 +144,45 @@ def check_config(config):
     return True
 
 
+def less_than(date1, date2):
+    d1 = datetime.datetime.strptime(date1, '%Y-%m-%d %H:%M:%S')
+    d2 = datetime.datetime.strptime(date2, '%Y-%m-%d %H:%M:%S')
+    return d1 < d2
+
+
+def get_config_list(configs_dict):
+    config_list = []
+    # insert sort
+    for key in configs_dict.keys():
+        config = configs_dict.get(key)
+        added = False
+        for i, item in enumerate(config_list):
+            if less_than(config["modificationDate"], item["modificationDate"]):
+                config_list.insert(i, config)
+                added = True
+                break
+        if not added:
+            config_list.append(config)
+    return config_list
+
+
 def generate_sql_list(files_dict, configs_dict):
     sql_list = []
+    modification_dates = []
     generated_articles = []
     md_files = []
-    for key in sorted(files_dict.keys()):
-        if not key.endswith(".md"):
+
+    config_list = get_config_list(configs_dict)
+    for config in config_list:
+        md_file = files_dict.get(config["name"])
+        if md_file is None:
+            utils.log_warn("can not find file for '%s'" % config["name"])
             continue
-        md_files.append(key)
-        name = key[:-3]
-        if name not in configs_dict:
-            utils.log_warn("can not find config for '%s'" % key)
+        if not md_file.endswith(".md"):
             continue
-        config = configs_dict[name]
-        with open(files_dict.get(key), 'r') as mdFile:
+        name = get_file_name(md_file)
+        md_files.append(name)
+        with open(md_file, 'r') as mdFile:
             if not check_config(config):
                 utils.log_warn("config file is invalid: name=%s, file_path=%s" % (name, config[key_config_file_path]))
                 continue
@@ -170,8 +205,10 @@ def generate_sql_list(files_dict, configs_dict):
                 content, group_name_, creator_,
                 creation_date_, modification_date_, display_order_, word_count_)
             generated_articles.append("name = %-45s title = %s" % (name, title_))
+            modification_dates.append(modification_date_)
             sql_list.append(sql)
-    return sql_list, generated_articles, md_files
+
+    return sql_list, modification_dates, generated_articles, md_files
 
 
 def print_generated_info(files_dict, configs_dict, generated_articles, md_files):
@@ -196,7 +233,8 @@ def print_result_sql(sql_list):
 def main():
     files_dict = get_files_dict()
     configs_dict = get_configs_dict(files_dict)
-    sql_list, generated_articles, md_files = generate_sql_list(files_dict, configs_dict)
+    sql_list, modification_dates, generated_articles, md_files = generate_sql_list(files_dict, configs_dict)
+    # generated_articles = sort_articles(sort_articles, modification_dates)
     print_generated_info(files_dict, configs_dict, generated_articles, md_files)
     print("############################################################################################")
     print("*************************************RESULT SQL*********************************************")
