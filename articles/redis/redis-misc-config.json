@@ -24,5 +24,18 @@
     "creationDate": "2018-10-11 00:00:00",
     "modificationDate": "2018-10-11 00:00:00",
     "displayOrder": 100
+  },
+  {
+    "name": "redis-trs-topics-modules-intro",
+    "type": 10,
+    "title": "Redis模块化介绍意译与解析",
+    "tags": "Redis Modules",
+    "summary": "想系统化的了解Redis模块化系统，还是官网资料比较靠谱，将官网资料进行整理、翻译方便后续自己以及其他同学学习。全文介绍了Redis Modules的基本概念，简单的使用方式等",
+    "coverImage": "",
+    "groupName": "Redis",
+    "creator": "charpty",
+    "creationDate": "2018-10-21 00:00:00",
+    "modificationDate": "2018-10-21 00:00:00",
+    "displayOrder": 100
   }
 ]
