@@ -180,7 +180,7 @@ def generate_sql_list(files_dict, configs_dict):
             continue
         if not md_file.endswith(".md"):
             continue
-        name = get_file_name(md_file)
+        name = clean_suffix(get_file_name(md_file))
         md_files.append(name)
         with open(md_file, 'r') as mdFile:
             if not check_config(config):
