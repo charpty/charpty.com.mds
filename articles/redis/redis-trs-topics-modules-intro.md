@@ -1,4 +1,6 @@
-> https://redis.io/topics/modules-intro
+> 笔者博客地址： https://charpty.com
+
+> 原文：https://redis.io/topics/modules-intro
 
 解析难懂之处，并提供更多的代码示例帮助理解。   
 原文还有不少章节是缺失的，这一部分我先将原文补齐，PR通过后我会补充。

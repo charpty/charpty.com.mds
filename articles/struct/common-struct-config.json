@@ -1,0 +1,15 @@
+[
+  {
+    "name": "write-red-black-tree",
+    "type": 10,
+    "title": "手写一棵红黑树",
+    "tags": "数据结构 红黑树",
+    "summary": "",
+    "coverImage": "",
+    "groupName": "struct",
+    "creator": "charpty",
+    "creationDate": "2018-10-22 00:00:00",
+    "modificationDate": "2018-10-22 00:00:00",
+    "displayOrder": 100
+  }
+]
