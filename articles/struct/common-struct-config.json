@@ -4,12 +4,12 @@
     "type": 10,
     "title": "手写一棵红黑树",
     "tags": "数据结构 红黑树",
-    "summary": "",
+    "summary": "面试的时候，经常问问别人```hashmap```实现，说着说着就免不了讲讲红黑树，能否写出一棵正确的红黑树很能体现程序员的专研学习能力。对于红黑树操作，想了个简单的记法，父红叔红就变色，父红叔黑靠旋转，删黑两孩很麻烦，叔黑孩最很简单。",
     "coverImage": "",
     "groupName": "struct",
     "creator": "charpty",
-    "creationDate": "2018-10-22 00:00:00",
-    "modificationDate": "2018-10-22 00:00:00",
+    "creationDate": "2018-10-27 00:00:00",
+    "modificationDate": "2018-10-27 00:00:00",
     "displayOrder": 100
   }
 ]
