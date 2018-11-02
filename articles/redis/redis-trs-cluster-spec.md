@@ -64,7 +64,7 @@ of Redis. There is just database 0 and the `SELECT` command is not allowed.
 Redis集群实现了单机模式下对单key操作的所有命令。其他同时对多个key进行操作的命令在被操作的keys落在同一个节点的情况下也能正确执行，比如求并集、交集。
 
 
-Redis集群实现了一个被称为**hash tags**的策略，它使得某个key总是落在同一个节点上。不论是否发生集群迁移，单key操作总是能正确执行，而多key操作则可能会失败。
+Redis集群实现了一个被称为**hash tags**（哈希标签）的策略，它使得某个key总是落在同一个节点上。不论是否发生集群迁移，单key操作总是能正确执行，而多key操作则可能会失败。
 
 
 Clients and Servers roles in the Redis Cluster protocol
@@ -275,6 +275,36 @@ keys evenly across the 16384 slots.
 
 **Note**: A reference implementation of the CRC16 algorithm used is available in the Appendix A of this document.
 
+Redis集群主要组件概要
+===
+
+Key分布策略
+---
+
+Key的存储空间被划分为16384个槽，事实上集群最大允许的master节点数量也是16384个，只是官方建议的最大节点个数是1000个。
+
+集群中的每个master节点负责存储16384个槽中的一小部分。集群槽未出现需重分配的情况下（指哈希槽从一个节点迁移到另一个节点），集群是稳定的。当一个集群是稳定的，意味着指定的hash槽总是由某个固定的master节点提供读写服务（当然，这个master节点可以有slave节点，用于在发生网络分裂或系统故障时接替它的工作，同时也可以在对实时性要求不高的场景下，为master节点分担一部分的读请求）。
+
+从key到存储槽（slot）的映射本质上就是通过以下这个函数（当然也存在不完全用key计算哈希标签的情况，在下一章节详述）：
+
+	HASH_SLOT = CRC16(key) mod 16384
+
+其中CRC16()函数实现策略如下：
+
+* 名称：XMODEM协议（也称作ZMODEM或CRC-16/ACORN）
+* 结果长度：16位
+* 多项式简记值：1021（等于x^16 + x^12 + x^5 + 1）
+* 初始值：0000
+* 反射输入数组：否
+* 反射输出校验码：否
+* 字符串"123456789"的校验结果：31C3
+
+CRC16()函数输出结果16位中的14位会被使用，当作取模计算的输入（这也是为什么计算哈希标签的公式是对16384取模（2^14）。
+
+经过测试，CRC16()对于各种种类的key都有很好的散列性，能将各个key均匀的分布到16384个槽中。
+
+CRC16的实现算法在本文档的附录A中。
+
 Keys hash tags
 ---
 
@@ -342,6 +372,71 @@ C example code:
          * what is in the middle between { and }. */
         return crc16(key+s+1,e-s-1) & 16383;
     }
+
+
+key与哈希标签
+---
+
+之前说的使用key进行计算并得到哈希槽的算法也存在特殊情况。我们可以通过一种策略将某些key映射在相同的哈希槽中。这种策略对需要在集群中实现多key操作的场景非常有用。
+
+为了实现哈希标签的这种特性，在某些情况下计算哈希槽的方式有所不同。  
+如果一个key包括一个花括号"{...}"，那么仅有花括号内的字符串才参与哈希槽的计算。当然也可能存在有多个不工整的左、右花括号，情况复杂，总结定义这种场景如下：
+
+* 从左向右检查字符串，如果发现key有一个左花括号'{'
+* 而且这个左花括号的右边还有一个右花括号'}'
+* 而且花括号内的有且不止一个字符
+
+符合上述情况时，key里这唯一一个花括号（只计算最左出现的完整花括号）内的字符串才会参与哈希槽的计算。
+
+举例来说：
+
+* `{user1000}.following` 和 `{user1000}.followers`这两个键会被映射到同一个哈希槽，因为只有花括号内的`user1000`参与哈希槽计算。
+* `foo{}{bar}`这个key会整个字符串参与哈希槽计算，因为第一个花括号内没有值，是一个无效的花括号（策略只管第一个碰到的花括号）
+* `foo{{bar}}zap`这个key仅有`{bar`参与哈希槽计算，策略只管第一个碰到的左花括号，和第一个碰到的右花括号之间的字符串。
+* `foo{bar}{zap}`这个key仅有`bar`会参与哈希槽计算，因为策略只管第一个碰到的花括号内的值。
+* 如果字符串以`{}`开头，那么肯定会以整个key当作哈希槽的计算依据。这在以字节数据当作key的场景非常有用（因为字节流转换为字符串可能出现各种各样的字符，恰好出现花括号就麻烦了）。
+
+加入了上述的特殊情况之后，之前说的计算哈希槽的函数可以改为用以下代码表达。
+
+
+Ruby代码示例:
+
+    def HASH_SLOT(key)
+        s = key.index "{"
+        if s
+            e = key.index "}",s+1
+            if e && e != s+1
+                key = key[s+1..e-1]
+            end
+        end
+        crc16(key) % 16384
+    end
+
+C example code:
+
+    unsigned int HASH_SLOT(char *key, int keylen) {
+        // 纪录第一个花括号的起始和结束
+        int s, e;
+
+        // 查找第一个左花括号
+        for (s = 0; s < keylen; s++)
+            if (key[s] == '{') break;
+
+        // 如果未找到花括号，那就直接以整个key作为计算依据
+        if (s == keylen) return crc16(key,keylen) & 16383;
+
+        // 找到左花括号之后开始找在这之后出现的右花括号
+        for (e = s+1; e < keylen; e++)
+            if (key[e] == '}') break;
+
+        // 如果没找到右花括号或者找到了右花括号单花括号内没有值，则以整个key当作计算依据
+        if (e == keylen || e == s+1) return crc16(key,keylen) & 16383;
+
+        // 走到这说明存在花括号且花括号内有子字符串，这以该子字符串作为计算依据
+        return crc16(key+s+1,e-s-1) & 16383;
+    }
+
+
 
 Cluster nodes attributes
 ---
