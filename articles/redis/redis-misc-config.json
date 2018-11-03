@@ -26,7 +26,7 @@
     "displayOrder": 100
   },
   {
-    "name": "redis-trs-topics-modules-intro",
+    "name": "redis-trs-modules-intro",
     "type": 10,
     "title": "Redis模块化介绍意译与解析",
     "tags": "Redis Modules",
@@ -36,6 +36,19 @@
     "creator": "charpty",
     "creationDate": "2018-10-21 00:00:00",
     "modificationDate": "2018-10-21 00:00:00",
+    "displayOrder": 100
+  },
+  {
+    "name": "redis-trs-cluster-spec",
+    "type": 10,
+    "title": "Redis集群规范意译",
+    "tags": "Redis Cluster",
+    "summary": "最近想切到```redis cluster```上去，第一次接触```redis cluster```是在16年做一个内网应用的时候，给我的第一印象是不那么靠谱，时刻近3年，```redis cluster```已经有了很大的改变。",
+    "coverImage": "",
+    "groupName": "Redis",
+    "creator": "charpty",
+    "creationDate": "2018-11-03 00:00:00",
+    "modificationDate": "2018-11-03 00:00:00",
     "displayOrder": 100
   }
 ]

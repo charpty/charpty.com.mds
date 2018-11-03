@@ -37,9 +37,9 @@ and other details may change in the future.
 
 本文章用于介绍Redis模块，分为以下几个文件
 
-INTRO.md（当前文件），Redis模块化的概要介绍，先读这个比较好。   
-API.md，介绍Redis的模块化提供的所有API，每个函数都有详细介绍。   
-BLOCK.md，介绍写一个阻塞客户端但不阻塞服务器的命令。   
+* `INTRO.md`（当前文件），Redis模块化的概要介绍，先读这个比较好。   
+* `API.md`，介绍Redis的模块化提供的所有API，每个函数都有详细介绍。   
+* `BLOCK.md`，介绍写一个阻塞客户端但不阻塞服务器的命令。   
 
 Redis内部命令的实现也使用了模块化，这种模式使得可以方便的自定义扩展模块，扩展的模块也可以方便的利用Redis中本来只能内部使用的优良特性。
 

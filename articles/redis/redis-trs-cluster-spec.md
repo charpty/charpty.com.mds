@@ -483,6 +483,25 @@ node in a small cluster of three nodes.
 
 In the above listing the different fields are in order: node id, address:port, flags, last ping sent, last pong received, configuration epoch, link state, slots. Details about the above fields will be covered as soon as we talk of specific parts of Redis Cluster.
 
+集群节点属性
+---
+
+在集群中，每个节点都有一个唯一的名字。节点名称是一个160比特的随机数字串，在节点启动时随机获取的（一般通过/dev/urandom获取）。    
+节点会将它的ID保存到其配置文件中，并且在之后会一直使用这个固定的ID，除非其配置文件被系统管理员删除或者通过`CLUSTER RESET`命令强制重置了集群。
+
+节点ID用于在集群中唯一标示一个节点。一个节点可以改变其IP地址而无需改变其节点ID。集群会通过集群总线上的```gossip```协议得知集群中各节点的IP、端口等配置信息的改变。
+
+节点ID不是节点的唯一配置信息，但却是节点信息中唯一的全局变量。每个节点都还包含其他配置信息。一部分信息是该节点在集群中的配置信息，该信息需要最终在整个集群保持一致。另外一部分信息则是节点私有的状态信息，比如节点最后一次被ping的时间，这些信息存储在各个节点本地。
+
+每个节点都维护了关于其他节点的以下信息：节点ID，节点的IP和端口、节点的各种的标记信息、slave节点的master节点信息、节点最后被ping的时间以及最后一次收到pong的时间、节点当前的配置版本号（后续章节再详细解释）、节点的连接状态以及属于该节点管辖范围的哈希槽。
+
+详细解释节点各个配置属性的内容在这篇名为`CLUSTER NODES`的文章里[explanation of all the node fields](http://redis.io/commands/cluster-nodes)。
+
+命令`CLUSTER NODES`可以在集群中任何节点执行，都会返回集群的状态信息以及在该节点眼中其他节点的状态信息。
+
+下面的例子展示了`CLUSTER NODES`
+
+
 The Cluster bus
 ---
 
