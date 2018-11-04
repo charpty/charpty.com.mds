@@ -11,9 +11,11 @@ import ntpath
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-article_sql_format = "REPLACE INTO `ARTICLE` (`NAME`,`TYPE`,`TITLE`,`TAG`,`SUMMARY`,`COVER_IMAGE`,`CONTENT`," \
-                     "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`,`WORD_COUNT`" \
-                     ") VALUES ('%s',%d,'%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);";
+meta_sql_format = "REPLACE INTO `ARTICLE_META` (`NAME`,`TYPE`,`TITLE`,`TAG`,`SUMMARY`,`COVER_IMAGE`," \
+                  "`GROUP_NAME`,`CREATOR`,`CREATION_DATE`,`MODIFICATION_DATE`,`DISPLAY_ORDER`,`WORD_COUNT`" \
+                  ") VALUES ('%s',%d,'%s','%s','%s','%s','%s','%s','%s','%s',%d,%d);"
+content_sql_format = "REPLACE INTO `ARTICLE_CONTENT` (`NAME`,`CONTENT`) VALUES ('%s','%s');"
+
 key_config_file_path = "file_path"
 pattern_link_start = "["
 pattern_link_end = "]("
@@ -200,13 +202,15 @@ def generate_sql_list(files_dict, configs_dict):
             modification_date_ = config["modificationDate"]
             display_order_ = config["displayOrder"]
             word_count_ = len(content)
-            sql = article_sql_format % (
+            meta_sql = meta_sql_format % (
                 name, type_, title_, tags_, summary_, cover_image_,
-                content, group_name_, creator_,
+                group_name_, creator_,
                 creation_date_, modification_date_, display_order_, word_count_)
+            content_sql = content_sql_format % (name, content)
             generated_articles.append("name = %-45s title = %s" % (name, title_))
             modification_dates.append(modification_date_)
-            sql_list.append(sql)
+            sql_list.append(meta_sql)
+            sql_list.append(content_sql)
 
     return sql_list, modification_dates, generated_articles, md_files
 
@@ -226,7 +230,11 @@ def print_generated_info(files_dict, configs_dict, generated_articles, md_files)
 
 
 def print_result_sql(sql_list):
+    count = 1
     for s in sql_list:
+        count = count + 1
+        if count % 2 == 0:
+            print
         print s
 
 
