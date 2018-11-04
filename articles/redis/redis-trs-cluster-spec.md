@@ -499,7 +499,14 @@ In the above listing the different fields are in order: node id, address:port, f
 
 命令`CLUSTER NODES`可以在集群中任何节点执行，都会返回集群的状态信息以及在该节点眼中其他节点的状态信息。
 
-下面的例子展示了`CLUSTER NODES`
+下面的例子展示了在一个只有3个节点的小集群里，在其中一个master节点上执行`CLUSTER NODES`命令得到的输出结果。
+
+    $ redis-cli cluster nodes
+    d1861060fe6a534d42d8a19aeb36600e18785e04 127.0.0.1:6379 myself - 0 1318428930 1 connected 0-1364
+    3886e65cc906bfd9b1f7e7bde468726a052d1dae 127.0.0.1:6380 master - 1318428930 1318428931 2 connected 1365-2729
+    d289c575dcbc4bdd2931585fd4339089e461a27d 127.0.0.1:6381 master - 1318428931 1318428931 3 connected 2730-4095
+    
+上述内容罗列了节点的各类属性值：节点ID、IP地址和端口、标记位、最后被ping的时间、最后收到pong的时间、配置版本号、连接状态、槽。这些属性会在谈到集群指定组件时再做详细介绍。
 
 
 The Cluster bus
@@ -521,6 +528,11 @@ to talk with Redis Cluster nodes using this protocol. However you can
 obtain more details about the Cluster bus protocol by reading the
 `cluster.h` and `cluster.c` files in the Redis Cluster source code.
 
+集群总线
+---
+
+每个集群中的节点都额外监听了一个端口，用于接受集群内其他节点的连接。这个端口号和Redis对外的服务端口号（接受客户端请求的端口）保持了一定的距离。对外服务端口号加上1000即可得到这个端口号。举个例子，比如说为客户端提供服务的端口号是6379，那么集群总线端口号则是16379.
+
 Cluster topology
 ---
 
@@ -536,6 +548,17 @@ While Redis Cluster nodes form a full mesh, **nodes use a gossip protocol and
 a configuration update mechanism in order to avoid exchanging too many
 messages between nodes during normal conditions**, so the number of messages
 exchanged is not exponential.
+
+集群拓扑
+---
+
+Redis集群是一个完全网格化的系统，每个节点都通过TCP连接与其他节点相连。
+
+在一个由N个节点的集群中，每个节点则有N-1个连接其他节点的TCP连接，同时还有N-1个其他节点连接它的TCP连接。
+
+这些TCP连接是持久保活的的，并且是从头到尾一直存在的。当一个节点期望通过集群总线收到ping请求响应结果pong时，如果一定时间没收到响应，在判断对方节点失活前，它会尝试刷新连接，也就是与对方重新建立连接。
+
+虽然Redis集群是完全网格型的系统，但节点间通信会使用gossip协议和有效的配置更新机制，能够有效的防止节点之间频繁的交换消息，所以消息交换的次数不是指数增长的。
 
 Nodes handshake
 ---
@@ -558,6 +581,20 @@ the cluster. Nodes will send `MEET` messages to other nodes **only if** the syst
 This means that as long as we join nodes in any connected graph, they'll eventually form a fully connected graph automatically. This means that the cluster is able to auto-discover other nodes, but only if there is a trusted relationship that was forced by the system administrator.
 
 This mechanism makes the cluster more robust but prevents different Redis clusters from accidentally mixing after change of IP addresses or other network related events.
+
+节点握手
+---
+
+节点接受在集群总线端口上的任何连接，甚至对于没有认证的ping请求也会给予响应。  
+当然除了ping以外的其他请求则需要发送者是集群中的一份子，否则这些请求包会被丢弃。
+
+让一个节点接受其他服务器成为集群中的一份子有两种方式：
+
+* 新的节点通过发送`MEET`消息向已有节点注册自己。一个`MEET`消息和`PING`类似，但是使得接收方将自己加入到集群中。只有系统管理员可以手动在新的节点上执行命令来向集群中的节点发送`MEET`消息，命令如下：    
+
+    CLUSTER MEET ip port
+
+* 已在集群中节点也会接受已被集群中其他节点接受的新节点，新节点消息将通过gossip消息送到给它。也就是说如果A节点认同了B节点，并且B节点认同了C节点，那么最终B节点会通过gossip消息将C节点介绍给A节点。当这个消息送到，A节点也会认同C节点是集群中的一部分，并且会尝试与C节点建立连接。
 
 Redirection and resharding
 ===
@@ -608,6 +645,32 @@ without redirections, proxies or other single point of failure entities.
 
 A client **must be also able to handle -ASK redirections** that are described
 later in this document, otherwise it is not a complete Redis Cluster client.
+
+重定向与重分配
+===
+
+MOVED重定向
+---
+
+一个Redis客户端可以向集群中任何节点发送请求，包括slave节点。接收到请求的节点会分析这个请求，如果是可处理的（要么是一个单key请求，或者是一个全部落在相同槽的多key请求），那么它会找到哪个节点可以负责处理这个请求，也就是这些key的哈希槽属于哪个节点管辖。
+
+如果这些key的哈希槽正是由本节点负责处理的，那么请求就会被直接处理了，否则的话，节点会查看它存储的哈希槽分布图，并返回一个重定向错误，如以下例子：
+
+    GET x
+    -MOVED 3999 127.0.0.1:6381
+    
+重定向错误信息包括了key具体落在了哪个哈希槽中以及管辖该哈希槽的节点的IP与端口信息。客户端则需要对这个IP和端口重新发起一次请求。  
+假设说再次客户端在再次发起请求前停留了足够长的时间，长到集群哈希槽分配策略又发生了一次改变，3999这个哈希槽又被分配到另外的节点管辖，那么再次请求目标节点时还是会收到重定向错误。在客户端未能及时收到集群配置变更信息时，就可能发生这种情况。
+
+所以我们想简化集群配置的表述，以节点ID唯一表示一个节点，以哈希槽+节点IP和端口来表示哈希槽与节点之间的映射关系。
+
+不强制要求客户端必须知道3999这个哈希槽时属于127.0.0.1:6381节点管辖的，但是客户端应该尝试尽快记住这些哈希槽与节点的映射关系。这样的话，当客户端想指定一个新的命令时，它就可以提前计算好key的哈希槽属于哪个节点管辖，从而更有可能连接到正确的节点上，一次性完成请求。
+
+当收到重定向错误时，另外一个选择就是通过`CLUSTER NODES` 或 `CLUSTER SLOTS`命令直接刷新本地关于哈希槽与节点映射关系的纪录。当收到某个key请求的重定向错误，大多数情况下不仅仅是这一个key的哈希槽与节点映射关系发生了改变，往往是很多的哈希槽与节点的映射关系都发生了改变，所以通常在这种情况下直接更新整个集群的哈希槽映射关系是最好的策略。
+
+其实大多数情况下集群都是稳定的（集群配置信息没有改动），这样所有客户端最终都会得到一份正确的哈希槽映射配置信息，这样集群的服务效率很高，客户端总是直接与正确的节点相连，没有重定向，没有代理以及其它单体故障。
+
+一个Redis客户端还必须能够正确处理-ASK重定向（具体细节后续章节描述），否则它就不是一个完整的Redis客户端。
 
 Cluster live reconfiguration
 ---
@@ -683,7 +746,7 @@ is that:
 
 * All queries about existing keys are processed by "A".
 * All queries about non-existing keys in A are processed by "B", because "A" will redirect clients to "B".
-
+    
 This way we no longer create new keys in "A".
 In the meantime, a special program called `redis-trib` used during reshardings
 and Redis Cluster configuration will migrate existing keys in
@@ -718,6 +781,69 @@ set the slots to their normal state again. The same command is usually
 sent to all other nodes to avoid waiting for the natural
 propagation of the new configuration across the cluster.
 
+在线修改集群配置
+---
+
+Redis集群支持在运行期间动态增删节点。增加和删除节点的方法被抽象为一个统一的操作：为节点分配哈希槽或移走哈希槽。也就是说一些基本的操作可以完成用来平衡集群、增加或删除节点，等等事情。
+
+* 向集群中增加一个节点，本质上就是在集群中增加一个空节点，随后将已有的节点管辖的部分哈希槽分配给新节点管辖。
+* 删除集群中的一个节点，也就是将这个节点管辖的哈希槽全部拿走，分配给其它节点。
+* 平衡集群节点的负载情况，调整各个节点管辖的哈希槽数量，使落在节点上的请求均匀分配
+
+所以这些操作的核心实现就是如何移动哈希槽。哈希槽这是个虚拟逻辑，实际上移动哈希槽就是对一堆key的移动，所以Redis集群在重分配期间所做的事情就是将一堆key从一个节点移动到另一个节点。移动一个哈希槽就意味着移动这个槽内所有的key。
+
+为了更好的理解这些工作原理，我们可以查看下关于操作哈希槽的几个集群子命令。
+
+以下这个命令是比较有效的（其他命令不能很好的说明问题）：
+
+* `CLUSTER ADDSLOTS` slot1 [slot2] ... [slotN]
+* `CLUSTER DELSLOTS` slot1 [slot2] ... [slotN]
+* `CLUSTER SETSLOT` slot NODE node
+* `CLUSTER SETSLOT` slot MIGRATING node
+* `CLUSTER SETSLOT` slot IMPORTING node
+
+前两个命令，`ADDSLOTS` 和 `DELSLOTS`是一对，分别用于分配与移除节点管辖的哈希槽。将哈希槽分配给某个节点意味着从此这个节点负责存储属于这些哈希槽的key和key对应的值数据，以及为落在这些key上的请求提供服务。
+
+当哈希槽重分配成功，节点会通过gossip协议传播这次配置变更信息，后续会有专门一个章节*configuration propagation*来描述这种行为。
+
+命令`ADDSLOTS`用于在刚创建一个集群时，将16384个可用的哈希槽分配给每个master节点。
+
+命令`DELSLOTS`多用于手动修改集群配置或者用于调试，在实际环境中它很少被使用。
+
+通过传入哈希槽与节点ID，命令`SETSLOT`可以用于将某个哈希槽分配给指定ID的节点。或者命令`SETSLOT`还可以将某些哈希槽设置为`MIGRATING`及`IMPORTING`状态。这两个哈希槽状态是为后面的哈希槽迁移操作做准备。
+
+* 当一个哈希槽被设置为MIGRATING状态，之前管辖该哈希槽的节点仍会处理所有的请求，但仅当指定key还在该节点上时才处理，否则请求会直接返回`-ASK`重定向到当前实际存储该key的节点上。
+* 当一个哈希槽被设置为IMPORTING状态，当前节点会接受所有关于该哈希槽点请求，但仅允许请求是被 `ASKING`命令重定向过来的。如果客户端没有带上`ASKING`特征，请求会返回重定向错误，重定向到哈希槽原来的节点。
+
+为了表达的更清楚，我们举一个哈希槽迁移的例子。  
+假设我们有两个master节点，分别称之为A和B。  
+我们想将哈希槽8从节点A移动到节点B，我们按以下流程执行迁移：
+
+* 向节点B发送命令：CLUSTER SETSLOT 8 IMPORTING A
+* 向节点A发送命令：CLUSTER SETSLOT 8 MIGRATING B
+
+此时集群中其它节点包括客户端，都还认为哈希槽8还属于节点A，并会重定向所有关于哈希槽8的请求到节点A，所以会发生如下情况：
+
+* 还未完成迁移（还在A上）的key还继续由A处理
+* 其他已经完成迁移的请求则由B处理，因为A会把已经不在它上面的key都重定向到B节点上。
+
+这种方式使得我们不需要在A节点上创建一个新key。  
+与此同时，Redis提供了一个特殊的工具 `redis-trib`，也是一个集群配置程序，它可以保证把哈希槽8已有的key从节点A移动到节点B。   
+可以使用以下命令实现该功能： 
+
+    CLUSTER GETKEYSINSLOT slot count
+    
+上述命令会返回指定槽中`count`个key。对于每个返回的key，`redis-trib`对节点A发送一个`MIGRATE`命令，这样会将该key从节点A迁移至节点B，迁移的动作是原子的，节点A和B都会被锁住（通常锁住的时间不会太长），避免迁移一个key的过程中出现竞态条件。如下是`MIGRATE`命令的工作原理：  
+
+    MIGRATE target_host target_port key target_database id timeout
+
+命令`MIGRATE`会连接目标节点（B），把序列化后的key发送过去，一旦收到成功响应，在当前的节点（A）中的key会被删除。从外界来看，在任意时刻，这个key要么在A中，要么在B中。
+
+在Redis集群中没有必要指定数据库序号，统一使用0号数据库，但是`MIGRATE`是一个通用命令，也可以用于被执行其它任务。   
+命令`MIGRATE`被特别优化过，及时移动复杂的key（比如长列表）也会尽可能的快，不过当拥有大量复杂key时，重分配哈希槽则会造成一定影响，对于使用该集群的应用会有一定的延时。
+
+当迁移过程完成，会发送`SETSLOT <slot> NODE <node-id>`命令给两个节点，使其哈希槽状态再度恢复正常。同样的命令也会发送给集群其它节点，可以让其它节点快速知晓更新后的哈希槽分配情况，而不用等待这两个节点慢慢的把消息传播到整个集群。
+
 ASK redirection
 ---
 
@@ -739,6 +865,11 @@ ASKING command before sending the query.
 
 Basically the ASKING command sets a one-time flag on the client that forces
 a node to serve a query about an IMPORTING slot.
+
+ASK重定向
+---
+
+在之前的章节，我们简要的介绍了ASK重定向。
 
 The full semantics of ASK redirection from the point of view of the client is as follows:
 
