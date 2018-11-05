@@ -866,11 +866,6 @@ ASKING command before sending the query.
 Basically the ASKING command sets a one-time flag on the client that forces
 a node to serve a query about an IMPORTING slot.
 
-ASK重定向
----
-
-在之前的章节，我们简要的介绍了ASK重定向。
-
 The full semantics of ASK redirection from the point of view of the client is as follows:
 
 * If ASK redirection is received, send only the query that was redirected to the specified node but continue sending subsequent queries to the old node.
@@ -886,6 +881,29 @@ so B will redirect the client to A using a MOVED redirection error.
 Slots migration is explained in similar terms but with different wording
 (for the sake of redundancy in the documentation) in the `CLUSTER SETSLOT`
 command documentation.
+
+ASK重定向
+---
+
+在之前的章节，我们简要的介绍了ASK重定向。为什么不能直接使用`MOVED`错误表示重定向呢？这是因为`MOVED`表示哈希槽已被永久迁移到另外一个节点，之后的所有请求都应该发送到新的节点上。而ASK表示仅仅下一次请求发送到指定节点。
+
+ASK是很有必要的，因为稍后来的其他关于哈希槽8的key可能依旧在A节点上，所以总是先请求A节点，A节点发现需要重定向时再去请求B节点。由于迁移仅涉及16384个槽的其中一个，所以两次请求带来的性能损失时可以接受。
+
+对于迁移过程中的哈希槽，我们必须确保客户端在向B节点发起请求前已经向A节点发过请求（通过ASK重定向到B），同时，如果客户端向B节点发送了ASKING命令，下一次请求的key所属的哈希槽必须是处于IMPORTING状态。
+
+简单点说，客户端通过发送一个ASKING命令，使得对应节点只能为属于IMPORTING状态的哈希槽提供服务。
+
+从客户端的角度来看，ASK的语义如下：
+
+* 如果接收到一个ASK重定向，仅把这一个被重定向请求发送给新的节点，其他关于这个哈希槽的请求还是发送给老的节点。
+* 首先发送一个ASKING命令到新的节点上，之后再执行数据请求
+* 关于哈希槽8的请求依旧发送到节点A上
+
+一旦哈希槽8的迁移动作完成，客户端再请求该哈希槽时，节点A会返回一个MOVED重定向消息，此时客户端就可以认为哈希槽从此以后都由节点B管辖了。  
+即使有出现问题的客户端过早的认为哈希槽已经迁移到新的节点上了，也不是什么大问题，因为错误的客户端不会先发送一个ASKING命令，这样的话，新节点只要返回一个MOVED重定向错误，告诉客户端该哈希槽还在老节点上即可。
+
+哈希槽迁移的说明也在命令`CLUSTER SETSLOT`的解释文档中提到（为了文档冗余，两处都可方便查看），但是语境不同。
+
 
 Clients first connection and handling of redirections
 ---
@@ -964,6 +982,56 @@ Before returning an error to the caller when a slot is found to
 be unassigned, the client should try to fetch the slots configuration
 again to check if the cluster is now configured properly.
 
+客户端首次连接与处理重定向
+---
+
+有可能存在这样的客户端，它不存储集群中哈希槽的分配关系记录（哈希槽与其集群节点的映射关系），仅仅是随机性的连接集群中的某些节点，然后等待着被重定向，从而能够访问到正确的节点，这样的客户端效率是非常低下的。
+
+Redis集群的客户端应该尽可能的智能化，认真记录下集群中哈希槽的分配关系。当然不强制要求记录的映射关系是最新版本的。由于连接到一个错误的客户端会被返回一个重定向错误，此时应该借机更新下客户端中的集群哈希槽分配关系记录。
+
+在下面两种场景下，客户端总是需要抓取一个完整的哈希槽分配关系记录以及节点地址信息：
+
+* 客户端刚启动时，需要获取集群哈希槽的初始信息
+* 当服务器返回一个重定向错误时
+
+某些客户端在收到重定向错误时，仅仅更新了被重定向的哈希槽的映射关系，往往这种做法是低效的，因为大多数情况下总是多个哈希槽映射关系一起发生改变（比如一个slave节点被提升为master节点后，原master节点管辖的所有哈希槽都将被重新分配）。在收到重定向错误时就更新整个集群的哈希槽映射关系记录，这是一种更加简单有效的办法。
+
+为了能检索哈希槽的配置关系，Redis集群提供了`CLUSTER NODES`命令，该命令不需要对各哈希槽逐个分析，并且能向客户端返回严格的配置关系记录。
+
+另一个新增的命令 `CLUSTER SLOTS`可以提供一组关于哈希槽以及其管辖它的master和其slave节点的信息。
+
+下面是`CLUSTER SLOTS`命令的示例：
+
+```
+127.0.0.1:7000> cluster slots
+1) 1) (integer) 5461
+   2) (integer) 10922
+   3) 1) "127.0.0.1"
+      2) (integer) 7001
+   4) 1) "127.0.0.1"
+      2) (integer) 7004
+2) 1) (integer) 0
+   2) (integer) 5460
+   3) 1) "127.0.0.1"
+      2) (integer) 7000
+   4) 1) "127.0.0.1"
+      2) (integer) 7003
+3) 1) (integer) 10923
+   2) (integer) 16383
+   3) 1) "127.0.0.1"
+      2) (integer) 7002
+   4) 1) "127.0.0.1"
+      2) (integer) 7005
+```
+每个返回数组中的前两个元素分别代表哈希槽的起始、结束位置。接下来的信息表示服务器的IP地址和端口信息。第一个IP、端口信息是管辖该哈希槽的master节点的地址信息，后续的IP、端口信息则是该master的slave节点信息，处于失败状态的slave节点不会在这里显示（slave的FAIL标记为被设置为true）。
+
+比如说，第一个数组表示哈希槽5461到10922（包含起始和结尾）被节点127.0.0.1:7001管辖并提供服务，客户端也可以连接只读实例127.0.0.1:7004。
+
+命令`CLUSTER SLOTS`不保证返回的哈希槽包含集群所有的16384个哈希槽，因为存在漏配的的情况，所以客户端因为记录好哪些哈希槽是未分配的，如果用户试图访问一个属于未被分配的哈希槽的key时，则应返还一个错误。
+
+在向调用者返回该key所属哈希槽未被分配的错误前，Redis客户端应该尝试重新获取集群哈希槽分配关系记录，检查该哈希槽此时是否已经被分配了。
+
+
 Multiple keys operations
 ---
 
@@ -986,6 +1054,21 @@ The client can try the operation after some time, or report back the error.
 As soon as migration of the specified hash slot has terminated, all
 multi-key operations are available again for that hash slot.
 
+多key操作
+---
+
+利用哈希标签，客户端可以进行多key操作，比如下面的多key操作是合法的：
+
+    MSET {user:1000}.name Angela {user:1000}.surname White
+
+在集群哈希槽迁移的过程中，多key操作可能会变得不可用。
+
+特别的，即使在重新分配哈希槽的过程中，如果指定的一群key仍然还存在同一个节点中（都在老节点中或者都在新节点中），那么多key操作仍然可用。
+
+如果多个key不在同在同一个节点中（一部分在老节点上，一部分在新节点上），此时对他们的多key操作将会收到一个`-TRYAGAIN`错误。客户端可以在稍后重试或者选择返回错误给调用者。
+
+当指定哈希槽的迁移完成，所以对该哈希槽的多key操作又将变得可用。
+
 Scaling reads using slave nodes
 ---
 
@@ -1007,6 +1090,22 @@ When this happens the client should update its hashslot map as explained in
 the previous sections.
 
 The readonly state of the connection can be cleared using the `READWRITE` command.
+
+使用slave节点分担读请求
+---
+
+通常来说，指定的命令都会被slave重定向给master节点，但是客户端可以利用slave节点来完成只读请求，从而提高读性能。
+
+接受只读请求意味着slave节点可以读取本地可能过期的数据返回给客户端，但是对客户端的写操作不感兴趣。
+
+当一个连接被设置为只读模式，slave节点仅仅在要服务的key不在其master节点的管辖范围时，才向客户端发送一个重定向错误。这种情况是有可能发生的，因为：
+
+1. 客户端发送了一个key，该key所属的哈希槽不在其master节点的管辖范围
+2. 集群处于重配置过程中（比如重分配哈希槽）并且slave节点无法为指定哈希槽提供服务了。
+
+这种情况下，客户端应该及时更新哈希槽映射关系记录，这块内容之前章节已经阐述过了。
+
+连接的只读状态可以通过`READWRITE`命令去除。
 
 Fault Tolerance
 ===
@@ -1033,6 +1132,26 @@ in the above example, the 330 packets per second exchanged are evenly
 divided among 100 different nodes, so the traffic each node receives
 is acceptable.
 
+集群容错
+===
+
+心跳与gossip消息
+---
+
+Redis集群中的节点不断的交换ping和pong包。两种包拥有相同的结构，并且两个包里都包含了相当重要的信息。两个包唯一的不同仅仅是消息类型而已。我们将这两种包都统称为**心跳包**。
+
+通常节点发送向另一个节点发送ping包，会使得接收者返回pong包响应。当然并不总是这样。节点也可以主动发送pong包来告诉其他节点它的配置信息，此时其它节点无需回复。这个特性非常有用，比如用来尽快向集群广播配置文件的更新信息。
+
+通常来说，一个节点会每秒随机的ping集群中一小部分节点，所以每个节点发出的ping包（以及收到pong包）的总数都会保持不变，这个总数和集群共有多少个节点无关。
+
+每个节点都监测着对其它节点的ping消息在`NODE_TIMEOUT/2`时间内是否成功返回pong消息。未收到pong消息的话，在`NODE_TIMEOUT`长时间前，节点也会尝试TCP重连该节点，确保未收到pong响应不是因为TCP连接问题。
+
+如果将`NODE_TIMEOUT`设置得比较小，集群拥有的节点数量较多，那么信息交换的总次数是非常多的，因为每个节点都会尝试ping那些未在`NODE_TIMEOUT/2`时间内上报配置信息的节点（也就是说在这个时间内必须通过pong推送配置信息）。
+
+比如一个有100个节点的集群，`NODE_TIMEOUT`被设置为60秒，此时每隔30秒每个节点都会发送99个ping包，也就是3.3个ping包每秒。乘以100个节点，也就是集群中每秒发生330个ping包交换。
+
+其实也有办法降低集群中的配置信息交换次数，但是目前这种量级的交换次数情况下并未收到任何关于带宽问题的故障报告，所以目前还是使用这种直接了当的信息交换方式。注意上面的例子中，330个ping包其实是由100个节点分担的，所以对单个节点来说这种流量是可以接受的。
+
 Heartbeat packet content
 ---
 
@@ -1057,6 +1176,30 @@ For every node added in the gossip section the following fields are reported:
 * Node flags.
 
 Gossip sections allow receiving nodes to get information about the state of other nodes from the point of view of the sender. This is useful both for failure detection and to discover other nodes in the cluster.
+
+心跳包内容
+---
+
+ping包和pong包和其他所有包一样，都包含了一个同样的数据头（例如请求故障转移时master投票的包），以及一个专门针对ping和pong包的gossip信息段。
+
+同样数据头中包含以下部分信息：
+
+* 节点ID，一个160位的随机字符串，在节点启动时随机分配，在节点的整个生命周期中，该ID都是其在集群中的唯一标示。
+* 发送节点的`当前配置版本号`和`配置版本号`属性，这是Redis集群分布式管理算法关键元素（会在下一章节描述）。如果节点是一个slave节点，那么它的`配置版本号`就是它最后一次得知的其master节点的版本号。
+* 节点标记位，表明节点是一个master还是一个slave，以及其他可能的单bit就能标示的节点信息。
+* 发送节点管辖的哈希槽的位图，如果发送节点是一个slave节点，则是其master节点管辖的哈希槽的位图。
+* 发送节点对外提供服务的端口（也就是接收客户端连接的端口；加上1000则得到集群总线端口）
+* 发送节点认为的服务器的状态
+* 其master节点的节点ID（如果发送节点是个slave节点）
+
+ping包和pong包也包含一个gossip段。这个段记录了在发送者的视角里，目前集群中其它节点的状态。这个gossip段仅仅包含一部分其它节点的信息（随机的）。gossip段包含了其它节点的信息的个数取决于集群的大小。
+
+gossip段中每个节点信息都包含以下属性：
+* 节点ID
+* 节点的IP地址和端口
+* 节点标记位
+
+Gossip段使得消息接收者能够知晓在发送者眼里其它节点的状态。这对发现失活的节点以及新加入的节点都非常有用。
 
 Failure detection
 ---
