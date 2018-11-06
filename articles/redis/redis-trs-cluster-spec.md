@@ -1252,6 +1252,59 @@ However the Redis Cluster failure detection has a liveness requirement: eventual
 
 **The `FAIL` flag is only used as a trigger to run the safe part of the algorithm** for the slave promotion. In theory a slave may act independently and start a slave promotion when its master is not reachable, and wait for the masters to refuse to provide the acknowledgment if the master is actually reachable by the majority. However the added complexity of the `PFAIL -> FAIL` state, the weak agreement, and the `FAIL` message forcing the propagation of the state in the shortest amount of time in the reachable part of the cluster, have practical advantages. Because of these mechanisms, usually all the nodes will stop accepting writes at about the same time if the cluster is in an error state. This is a desirable feature from the point of view of applications using Redis Cluster. Also erroneous election attempts initiated by slaves that can't reach its master due to local problems (the master is otherwise reachable by the majority of other master nodes) are avoided.
 
+失活检测
+---
+
+Redis集群失活检测用于识别集群中那些与大多数节点都失联的master或slave节点，随后提升相应的slave节点为master节点。当发生故障时若无法将slave提升为master，那么整个集群将转为不可用状态，无法为客户端提供服务。
+
+之前已经提到，每个节点都存有其他节点的标记位信息列表。其中有两个标记位称为`PFAIL` 和 `FAIL`，专用于失活检测的。`PFAIL`表示可能失活了，是一个不完全确定的状态类型。`FAIL`则代表则一个节点已经失活，这个结果已经在指定时间内被集群中大多数节点所认同。
+
+**标记位PFAIL:**
+
+当一个节点发现另一个节点在`NODE_TIMEOUT`时间内都无法联系到时，它会标记该节点为`PFAIL`状态。master节点和slave节点都可以将其他节点标记为`PFAIL`状态，不管对方是master还是slave节点。
+
+在Redis集群中，与某个节点失联的概念是向该节点发送的**活跃ping包**（一个还没有收到响应的ping包）等待了超过`NODE_TIMEOUT`长时间还没收到回复。为了使这种机制能正常工作，设置的`NODE_TIMEOUT`必须比一次网络请求往返花费的时间长。为了增加实际操作时的可靠性，当一个节点在`NODE_TIMEOUT/2`未收到某节点响应时就会尝试与该节点重新建立TCP连接。这个技巧保证了网络连接的问题不会导致出现节点失活的状况。
+
+**标记位FAIL**
+
+标记位`PFAIL`相当于各节点自身对其他节点状态的看法，并不会导致集群进行一次slave提升过程。一个节点从`PFAIL`状态到实际被判定为离线，需要从状态`PFAIL`转换到`FAIL`。
+
+正如本文“节点心跳”章节描述的一样，每个节点都会随机向其它节点发送包含状态的gossip消息。每个节点也会从各个其他节点那里收到各个节点标记位信息。这种机制使得各个节点都有手段通知其他节点关于它所发现的某些节点失活的情况。
+
+一个`PFAIL`状态在满足以下情况下会转换为`FAIL`状态：
+
+* 首先我们有两个节点，A节点认为B节点失活，并将其标记为`PFAIL`
+* 节点A通过gosssip段信息收集了集群中大多数master节点对于B节点的看法
+* 大多数节点都在`NODE_TIMEOUT * FAIL_REPORT_VALIDITY_MULT` 时间内将B标记为 `PFAIL` 或 `FAIL`状态。（这个时间有效系数暂被设置为2，所以也就是2倍的`NODE_TIMEOUT`时间内）
+
+如果上述所有的条件都满足了，节点会做以下事情：
+
+* 标记B节点为`FAIL`状态
+* 向集群中其它可达的节点发送B节点离线的消息
+
+这个`FAIL`消息会强制的让每个接收到该消息的节点都将B节点标记为`FAIL`状态，不管目前它是否已经将B节点标记为`PFAIL`状态。
+
+注意*FAIL状态可以认为是单向*。也就是说，一个节点可以从`PFAIL`状态转换到`FAIL`状态，但是`FAIL`只能通过以下几种情况才能被清除：
+
+* 该节点再次变得可达并且是一个slave节点。在这种情况下其`FAIL`标记将被清除，因为slave节点不需要故障恢复。
+* 该节点再次变得可达并且是一个master节点，但不管辖任何哈希槽。在这种情况下`FAIL`标记将被清除，因为不管辖哈希槽的master节点并并没有实际参与集群的服务工作，它只能等待管理员重新为其分配哈希槽才能真正融入集群。
+
+* 该节点再次变得可达并且是一个master节点，但是经过很长时间（N个`NODE_TIMEOUT`时间）都没有可用的slave节点能提升为master节点来代替它。这种情况下最好是把这个节点从集群中移除再重新加入。
+
+可以发现，从`PFAIL` 到 `FAIL`的转换使用了一个协议，这个协议是一个弱协议：
+
+1. 节点在指定时间周期内收集其它节点关于集群节点状态的视图信息，所以即使我们发现集群中的大多数集群都表示“同意观点”，但是这也仅仅是我们在不同时间内，不同节点上收集的信息，我们无法确定是否在某一个时刻集群中的大多数节点都表示“同意观点”。我们接收到的状态报告其实有可能已经是陈旧的了，从开始失活到大多数节点发现该节点失活有一个时间窗口。
+2. 检测到故障的节点会向其它发送`FAIL`消息来强制其它节点将该节点标记为离线，但是无法确定节点都收到了这个消息。比如一个节点就算发现了集群中的故障，但也可能由于网络分区`FAIL`传输不到任何其它节点上。
+
+这样设计是因为Redis集群对失活检测有一个活性要求：   
+最终所有的节点都必须就指定节点的状态达成一致。当集群出现脑裂情况将导致节点分为两种状态。一部分节点认为指定节点是`FAIL`状态，另一部分节点则认为指定没有失活。这两类节点最终都会对指定的节点的状态达成一致。
+
+**情况1**：如果大多数节点都将该节点标记为`FAIL`状态，由于`FAIL`链式传播并且强制执行的，其它节点最终都会将该节点标记为`FAIL`，因为在指定窗口时间内足够产生够多的失活统计。
+
+**情况2**：只有一小部分节点将该节点标记为`FAIL`状态时，不会发生slave提升过程（它使用一个更加正规的算法，保证集群中每个节点都最终知道提升事件），各个节点会根据之前提到的规则来清除`FAIL`状态（也就是在N各`NODE_TIMEOUT`时间后仍然没有slave提升则会清除状态）。
+
+**这个`FAIL`标记仅仅是触发slave安全提升算法的一个触发器而已**。理论上来说，一个slave节点可以在发现主节点不可用时独立的完成slave提升过程，之后如果主节点仍然对于集群大多数节点来说是可用的，那么主节点将拒绝认可这次提升事件。然而通过增加稍复杂的`PFAIL -> FAIL`转换过程，弱的一致性协议，以及`FAIL`消息，使得节点状态信息在最短的时间内在集群可达节点中传播开来，虽然增加了复杂性却有实际好处。由于这些机制，集群中的节点几乎在同一时间就会因为集群不可用而停止写服务（写快速失败）。这从Redis的角度来看，是一个很理想的特性。同时也避免了那些无法到达其master节点的slave节点试图发起不必要的slave提升的情况（其实该master在集群大多数节点眼中还是可用的）。
+
 Configuration handling, propagation, and failovers
 ===
 
@@ -1271,6 +1324,24 @@ Because of these semantics, eventually all the nodes will agree to the greatest 
 This information is used when the state of the cluster is changed and a node seeks agreement in order to perform some action.
 
 Currently this happens only during slave promotion, as described in the next section. Basically the epoch is a logical clock for the cluster and dictates that given information wins over one with a smaller epoch.
+
+配置处理、传播及故障处理
+===
+
+集群配置当前版本号
+---
+
+Redis集群使用了和Raft协议的“term”（学期）很像的一个概念。在Redis集群中使用一个叫做“版本号”（可以称之为纪元，但用熟悉的版本号更好理解，一个版本号类似一个阶段）的术语，他用于配置信息的增量控制。当多个节点提供了冲突性的配置信息时，各节点可以使用版本号来判定哪个配置信息是最新的。
+
+这个`集群状态版本号`是一个64位的无符号整型。
+
+当集群节点创建时，每个节点，不管master还是slave，都将`集群状态版本号`设置为0.
+
+当节点收到一个消息包，如果其中发生者的版本号（在集群总线消息的通用数据头中）比当前节点的版本号大，那么`集群状态版本号`会被更新为发送者的版本号。
+
+这种情况发生在集群状态发生了一些改变，某个节点尝试执行一些操作。
+
+目前这种情况仅仅发生在slave提升的过程中，将在下一章节描述。大致来说，版本号是一个集群的逻辑时钟，它表示版本号更大的状态信息是最新的。
 
 Configuration epoch
 ---
@@ -1292,6 +1363,23 @@ Every time the `configEpoch` changes for some known node, it is permanently stor
 
 The `configEpoch` values generated using a simple algorithm during failovers
 are guaranteed to be new, incremental, and unique.
+
+配置版本号
+---
+
+每个master节点总是将它的版本号信息和管辖的哈希槽一起放入ping包和pong包中。
+
+这个`配置版本号`在新节点创建时总是初设置为0。
+
+在slave选举时会产生一个新的`配置版本号`。slave节点尝试替代失活的master节点的工作，提升它们的版本号，并征得集群中大多数master节点的授权。当slave被成功授权，会转变为master节点并会产生一个新的唯一`配置纪元`。
+
+下个章节会解释`配置`纪元如何解决不同节点声明不同配置时的冲突问题（可能是网络分区引发的节点失败）。
+
+从节点也会在ping包pong包带上`配置版本号`信息，但是这个`配置版本号`只是它与其master交换时获得的最新一个`配置版本号`。这使得其它节点可以很快的发现slave节点的配置是否需要更新（master节点不会给是旧`配置版本号`的slave节点投票）。
+
+每当节点的`配置版本号`被更新，都会存储在其nodes.conf文件中。`集群状态版本号`版本号也是一样。一旦更新，节点保证在执行其它操作之前，将这两个变量同步写入到本地磁盘中。
+
+当一个节点重故障中恢复，其生成`配置版本号`的是目前集群中最新的。
 
 Slave election and promotion
 ---
