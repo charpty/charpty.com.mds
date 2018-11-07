@@ -1,5 +1,6 @@
-最近想切到```redis cluster```上去，第一次接触```redis cluster```是在16年做一个内网应用的时候，给我的第一印象是不那么靠谱，时刻近3年，```redis cluster```已经有了很大的改变。
+最近想切到```redis cluster```上去，第一次接触```redis cluster```是在16年做一个内网应用的时候，给我的第一印象是不那么靠谱，时隔近3年，```redis cluster```已经有了很大的改变。
 
+对Redis集群规范一文进行了大致翻译，后续结合代码和大家一起分析实现。
 
 --
 
@@ -36,7 +37,7 @@ Redis集群设计目标
 
 Redis集群是一个分布式系统，设计时期望达到以下几个目标（按重要性排序）
 
-* 高性能和线性扩展，Redis集群能支持1000个节点以下性能线性扩展（几乎）。集群使用异步复制方法保持同步，节点不为其它节点提供代理服务，没有对冲突键的值合并操作。
+* 高性能和线性扩展，Redis集群能支持1000个节点以下性能线性扩展（几乎）。集群使用异步复制方法保持同步，节点不为其它节点提供代理服务，没有对冲突键-值的合并操作。
 * 可接受的最低写安全：集群尽最大努力保留对master节点的写操作。那些与大多数节点相连的客户端实现的写操作会被尽量保存，但是还是会有一个时间窗口导致数据丢失。反之如果客户端只连接了少数客户端则比较容易丢失数据。
 * 可用性：集群在大多数master节点可用且至少带有一个slave情况下可正常工作并保持高可用，master节点之间会尽可能平衡slave个数。
 
@@ -61,7 +62,7 @@ of Redis. There is just database 0 and the `SELECT` command is not allowed.
 实现的功能
 ---
 
-Redis集群实现了单机模式下对单key操作的所有命令。其他同时对多个key进行操作的命令在被操作的keys落在同一个节点的情况下也能正确执行，比如求并集、交集。
+Redis集群实现了单机模式下对单key操作的所有命令。其它同时对多个key进行操作的命令在被操作的keys落在同一个节点的情况下也能正确执行，比如求并集、交集。
 
 
 Redis集群实现了一个被称为**hash tags**（哈希标签）的策略，它使得某个key总是落在同一个节点上。不论是否发生集群迁移，单key操作总是能正确执行，而多key操作则可能会失败。
@@ -98,11 +99,11 @@ keys and nodes can improve the performance in a sensible way.
 在集群协议中客户端与服务器的角色
 ---
 
-在Redis集群中，所有节点都要负责存储数据、存储集群状态信息（key与节点映射关系）。节点也具备自动检测其他节点存活情况的能力。发现master节点失活后，提升其对应slave节点为master节点来继续对外提供服务。
+在Redis集群中，所有节点都要负责存储数据、存储集群状态信息（key与节点映射关系）。节点也具备自动检测其它节点存活情况的能力。发现master节点失活后，提升其对应slave节点为master节点来继续对外提供服务。
 
-为了能完成上述工作，所有节点都通过TCP连接，通过一个二进制协议通信，称之为**Redis Cluster Bus**（Redis集群总线）。节点与节点之间都通过集群总线相连，节点之间使用gossip协议来传播信息，以便能够发现新节点，发送心跳消息确定其他节点可用，以及传播其他集群特定消息。集群总线同时也用于传播集群版本的发布/订阅消息，也用于传播由管理手动发起的故障转移命令。
+为了能完成上述工作，所有节点都通过TCP连接，通过一个二进制协议通信，称之为**Redis Cluster Bus**（Redis集群总线）。节点与节点之间都通过集群总线相连，节点之间使用gossip协议来传播信息，以便能够发现新节点，发送心跳消息确定其它节点可用，以及传播其它集群特定消息。集群总线同时也用于传播集群版本的发布/订阅消息，也用于传播由管理手动发起的故障转移命令。
 
-由于节点无法代理其它节点，客户端的请求可能会被重定向，通过返回`-MOVED` 和 `-ASK`告知客户端数据在其它节点上。理论上来说客户端可以向集群中任意节点发送消息，通过重定向最终都会知道数据落在哪个节点，客户端不强制记录集群的节点信息和槽分布情况，但是如果记录了在请求数据时能提供性能。
+由于节点无法代理其它节点，客户端的请求可能会被重定向，通过返回`-MOVED` 和 `-ASK`告知客户端数据在其它节点上。理论上来说客户端可以向集群中任意节点发送消息，通过重定向最终都会知道数据落在哪个节点，客户端不强制记录集群的节点信息和槽分布情况，但是如果记录了在请求数据时能提高性能。
 
 
 Write safety
@@ -132,7 +133,7 @@ Specifically, for a master to be failed over it must be unreachable by the major
 写安全
 --
 
-Redis集群使用异步副本实现冗余备份，。数据总是由最终选上master的节点决定。在分区失败时总是存在一个时间窗口其写入操作会被丢弃。如果客户端连接了大多数集群节点，那么这个窗口会小的多，反之则时间窗口会大得多。
+Redis集群使用异步副本实现冗余备份，并使用类似“后来者居上”的合并策略。数据总是由最终选上master的节点决定。在分区失败时总是存在一个时间窗口其写入操作会被丢弃。如果客户端连接了大多数集群节点，那么这个窗口会小得多，反之则时间窗口会大得多。
 
 相比连接了少数节点的客户端而言，Redis集群尽全力保存那些连接了大多数节点的客户端的写操作。
 以下几种场景是集群故障恢复过程中可能丢失已写入数据的情况。
@@ -150,7 +151,7 @@ Redis集群使用异步副本实现冗余备份，。数据总是由最终选上
 
 只连接少数节点来进行写操作，丢失数据的时间窗口更大。举例来说，当一个客户端只连接少数几个节点时，Redis集群可能会丢失相当多的数据，因为所有的写操作都集中在少数几个master节点上，而一旦这些出现问题那后果很严重。
 
-具体的说，判定一个master节点是否已失效（与大多数节点失联）需要经过`NODE_TIMEOUT`长时间，如果master节点在这段时间内又恢复正常，那么不会发生数据丢失（恢复后又会把数据同步给slave）。如果故障持续的时间大于`NODE_TIMEOUT`，那么在连接少数节点的客户端对于某些master的写操作将可能丢失。当这些少数节点在经过`NODE_TIMEOUT`时间无法与集群大多数节点联系后，它们都将进入不可服务状态，此后以后也不会有写丢失。
+具体的说，判定一个master节点是否已失效（与大多数节点失联）需要经过`NODE_TIMEOUT`长时间，如果master节点在这段时间内又恢复正常，那么不会发生数据丢失（恢复后又会把数据同步给slave）。如果故障持续的时间大于`NODE_TIMEOUT`，那么在连接少数节点的客户端对于某些master的写操作将可能丢失。当这些少数节点在经过`NODE_TIMEOUT`时间无法与集群大多数节点联系后，它们都将进入不可服务状态，此后再也不会有写丢失。
 
 Availability
 ---
@@ -172,7 +173,7 @@ layout in order to better resist the next failure.
 可用性
 ---
 
-Redis集群无法在仅存少部分节点的情况下正常工作（即使少部分节点成功组成集群）。对于大多数节点组成的节点，集群假设各master节点都有一个可用的从节点，在master节点发生故障`NODE_TIMEOUT`时间后，其slave节点通过一个短时间的选举操作，将被提升为master节点，接替其原master的工作，接替工作耗时在1-2秒钟左右。
+Redis集群无法在仅存少部分节点的情况下正常工作（即使少部分节点成功组成集群）。对于大多数节点的集合，集群假设各master节点都有一个可用的从节点，在master节点发生故障`NODE_TIMEOUT`时间后，其slave节点通过一个短时间的选举操作，将被提升为master节点，接替其原master的工作，接替工作耗时在1-2秒左右。
 
 也就是说，Redis集群被设计为能在大多数节点可用时正常工作，对于那些有大规模网络分区的情况的场景则不适用。
 
@@ -202,11 +203,11 @@ Redis Cluster.
 性能
 ---
 
-Redis集群中的节点不代理本该其它完成的服务，而是通过命令重定向的方式告诉客户端到该key所在的节点再访问一次。
+Redis集群中的节点不代理本该由其它完成的服务，而是通过命令重定向的方式告诉客户端到该key所在的节点再访问一次。
 
 最终，客户端会获得一个最新的key与节点的映射关系，能够知道哪些key落在哪些节点，从而直接与正确的节点联系。
 
-由于是异步副本冗余，节点无需等待slave的数据复制确认而是在本节点写完成后就直接返回成功。（除非强制指定来`WAIT`命令）
+由于是异步副本冗余，节点无需等待slave的数据复制确认，而是在本节点写完成后就直接返回成功。（除非强制指定来`WAIT`命令）
 
 另外，由于对多个key的操作命令只能对在同一节点上的key执行，所以key几乎固定在某一个节点上，仅在需要resharding时才会移动。
 
@@ -229,7 +230,7 @@ non-clustered Redis version.
 为何禁用值合并操作
 ---
 
-Redis集群不会合并在不同节点上的但Key相同的数据，当然这种设计并不是在所有场景都可取的，而是因为Redis的特殊情况而定下了这个策略。Redis中的数据值可能是一个非常大的，比如说list、set这样的集合，可以包含上百万个元素。除此之外，数据结构也比较复杂。传输并合并这些K-V，可能成为集群的主要瓶颈，甚至需要应用方有复杂的配合逻辑，以及更多的存储空间来存放这些迁移K-V的元数据等等。
+Redis集群不会合并在不同节点上的但Key相同的数据，当然这种设计并不是在所有场景都可取的，而是因为Redis的特殊情况而定下了这个策略。Redis中的数据值可能是非常大的，比如说list、set这样的集合，可以包含上百万个元素。除此之外，数据结构也比较复杂。传输并合并这些K-V，可能成为集群的主要瓶颈，甚至需要应用方有复杂的配合逻辑，以及更多的存储空间来存放这些迁移K-V的元数据等等。
 
 当然Redis的这种设计不是什么完美的技术标准。CRDTs或同步状态机也有类似数据结构、数据大小的情况，但是它们选择了不同的策略。Redis集群的这种设计也是为了照顾非集群环境下的使用场景。
 
@@ -491,13 +492,13 @@ In the above listing the different fields are in order: node id, address:port, f
 
 节点ID用于在集群中唯一标示一个节点。一个节点可以改变其IP地址而无需改变其节点ID。集群会通过集群总线上的```gossip```协议得知集群中各节点的IP、端口等配置信息的改变。
 
-节点ID不是节点的唯一配置信息，但却是节点信息中唯一的全局变量。每个节点都还包含其他配置信息。一部分信息是该节点在集群中的配置信息，该信息需要最终在整个集群保持一致。另外一部分信息则是节点私有的状态信息，比如节点最后一次被ping的时间，这些信息存储在各个节点本地。
+节点ID不是节点的唯一配置信息，但却是节点信息中唯一的全局变量。每个节点都还包含其它配置信息。一部分信息是该节点在集群中的配置信息，该信息需要最终在整个集群保持一致。另外一部分信息则是节点私有的状态信息，比如节点最后一次被ping的时间，这些信息存储在各个节点本地。
 
-每个节点都维护了关于其他节点的以下信息：节点ID，节点的IP和端口、节点的各种的标记信息、slave节点的master节点信息、节点最后被ping的时间以及最后一次收到pong的时间、节点当前的配置版本号（后续章节再详细解释）、节点的连接状态以及属于该节点管辖范围的哈希槽。
+每个节点都维护了关于其它节点的以下信息：节点ID，节点的IP和端口、节点的各种的标记信息、slave节点的master节点信息、节点最后被ping的时间以及最后一次收到pong的时间、节点当前的`配置版本号`（后续章节再详细解释）、节点的连接状态以及属于该节点管辖范围的哈希槽。
 
 详细解释节点各个配置属性的内容在这篇名为`CLUSTER NODES`的文章里[explanation of all the node fields](http://redis.io/commands/cluster-nodes)。
 
-命令`CLUSTER NODES`可以在集群中任何节点执行，都会返回集群的状态信息以及在该节点眼中其他节点的状态信息。
+命令`CLUSTER NODES`可以在集群中任何节点执行，都会返回集群的状态信息以及在该节点眼中其它节点的状态信息。
 
 下面的例子展示了在一个只有3个节点的小集群里，在其中一个master节点上执行`CLUSTER NODES`命令得到的输出结果。
 
@@ -531,7 +532,7 @@ obtain more details about the Cluster bus protocol by reading the
 集群总线
 ---
 
-每个集群中的节点都额外监听了一个端口，用于接受集群内其他节点的连接。这个端口号和Redis对外的服务端口号（接受客户端请求的端口）保持了一定的距离。对外服务端口号加上1000即可得到这个端口号。举个例子，比如说为客户端提供服务的端口号是6379，那么集群总线端口号则是16379.
+每个集群中的节点都额外监听了一个端口，用于接受集群内其它节点的连接。这个端口号和Redis对外的服务端口号（接受客户端请求的端口）保持了一定的距离。对外服务端口号加上1000即可得到这个端口号。举个例子，比如说为客户端提供服务的端口号是6379，那么集群总线端口号则是16379.
 
 Cluster topology
 ---
@@ -552,9 +553,9 @@ exchanged is not exponential.
 集群拓扑
 ---
 
-Redis集群是一个完全网格化的系统，每个节点都通过TCP连接与其他节点相连。
+Redis集群是一个完全网格化的系统，每个节点都通过TCP连接与其它节点相连。
 
-在一个由N个节点的集群中，每个节点则有N-1个连接其他节点的TCP连接，同时还有N-1个其他节点连接它的TCP连接。
+在一个由N个节点的集群中，每个节点则有N-1个连接其它节点的TCP连接，同时还有N-1个其它节点连接它的TCP连接。
 
 这些TCP连接是持久保活的的，并且是从头到尾一直存在的。当一个节点期望通过集群总线收到ping请求响应结果pong时，如果一定时间没收到响应，在判断对方节点失活前，它会尝试刷新连接，也就是与对方重新建立连接。
 
@@ -586,15 +587,15 @@ This mechanism makes the cluster more robust but prevents different Redis cluste
 ---
 
 节点接受在集群总线端口上的任何连接，甚至对于没有认证的ping请求也会给予响应。  
-当然除了ping以外的其他请求则需要发送者是集群中的一份子，否则这些请求包会被丢弃。
+当然除了ping以外的其它请求则需要发送者是集群中的一份子，否则这些请求包会被丢弃。
 
-让一个节点接受其他服务器成为集群中的一份子有两种方式：
+让一个节点接受其它服务器成为集群中的一份子有两种方式：
 
 * 新的节点通过发送`MEET`消息向已有节点注册自己。一个`MEET`消息和`PING`类似，但是使得接收方将自己加入到集群中。只有系统管理员可以手动在新的节点上执行命令来向集群中的节点发送`MEET`消息，命令如下：    
 
     CLUSTER MEET ip port
 
-* 已在集群中节点也会接受已被集群中其他节点接受的新节点，新节点消息将通过gossip消息送到给它。也就是说如果A节点认同了B节点，并且B节点认同了C节点，那么最终B节点会通过gossip消息将C节点介绍给A节点。当这个消息送到，A节点也会认同C节点是集群中的一部分，并且会尝试与C节点建立连接。
+* 已在集群中节点也会接受已被集群中其它节点接受的新节点，新节点消息将通过gossip消息送到给它。也就是说如果A节点认同了B节点，并且B节点认同了C节点，那么最终B节点会通过gossip消息将C节点介绍给A节点。当这个消息送到，A节点也会认同C节点是集群中的一部分，并且会尝试与C节点建立连接。
 
 Redirection and resharding
 ===
@@ -660,11 +661,11 @@ MOVED重定向
     -MOVED 3999 127.0.0.1:6381
     
 重定向错误信息包括了key具体落在了哪个哈希槽中以及管辖该哈希槽的节点的IP与端口信息。客户端则需要对这个IP和端口重新发起一次请求。  
-假设说再次客户端在再次发起请求前停留了足够长的时间，长到集群哈希槽分配策略又发生了一次改变，3999这个哈希槽又被分配到另外的节点管辖，那么再次请求目标节点时还是会收到重定向错误。在客户端未能及时收到集群配置变更信息时，就可能发生这种情况。
+假设说客户端再次发起请求前停留了足够长的时间，长到集群哈希槽分配策略又发生了一次改变，3999这个哈希槽又被分配到另外的节点管辖，那么再次请求目标节点时还是会收到重定向错误。在客户端未能及时收到集群配置变更信息时，就可能发生这种情况。
 
 所以我们想简化集群配置的表述，以节点ID唯一表示一个节点，以哈希槽+节点IP和端口来表示哈希槽与节点之间的映射关系。
 
-不强制要求客户端必须知道3999这个哈希槽时属于127.0.0.1:6381节点管辖的，但是客户端应该尝试尽快记住这些哈希槽与节点的映射关系。这样的话，当客户端想指定一个新的命令时，它就可以提前计算好key的哈希槽属于哪个节点管辖，从而更有可能连接到正确的节点上，一次性完成请求。
+不强制要求客户端必须知道3999这个哈希槽是属于127.0.0.1:6381节点管辖的，但是客户端应该尝试尽快记住这些哈希槽与节点的映射关系。这样的话，当客户端想指定一个新的命令时，它就可以提前计算好key的哈希槽属于哪个节点管辖，从而更有可能连接到正确的节点上，一次性完成请求。
 
 当收到重定向错误时，另外一个选择就是通过`CLUSTER NODES` 或 `CLUSTER SLOTS`命令直接刷新本地关于哈希槽与节点映射关系的纪录。当收到某个key请求的重定向错误，大多数情况下不仅仅是这一个key的哈希槽与节点映射关系发生了改变，往往是很多的哈希槽与节点的映射关系都发生了改变，所以通常在这种情况下直接更新整个集群的哈希槽映射关系是最好的策略。
 
@@ -784,7 +785,7 @@ propagation of the new configuration across the cluster.
 在线修改集群配置
 ---
 
-Redis集群支持在运行期间动态增删节点。增加和删除节点的方法被抽象为一个统一的操作：为节点分配哈希槽或移走哈希槽。也就是说一些基本的操作可以完成用来平衡集群、增加或删除节点，等等事情。
+Redis集群支持在运行期间动态增删节点。增加和删除节点的方法被抽象为一个统一的操作：为节点分配哈希槽或移走哈希槽。也就是说一些基本的操作可以完成平衡集群、增加或删除节点等等事情。
 
 * 向集群中增加一个节点，本质上就是在集群中增加一个空节点，随后将已有的节点管辖的部分哈希槽分配给新节点管辖。
 * 删除集群中的一个节点，也就是将这个节点管辖的哈希槽全部拿走，分配给其它节点。
@@ -794,7 +795,7 @@ Redis集群支持在运行期间动态增删节点。增加和删除节点的方
 
 为了更好的理解这些工作原理，我们可以查看下关于操作哈希槽的几个集群子命令。
 
-以下这个命令是比较有效的（其他命令不能很好的说明问题）：
+以下这个命令是比较有效的（其它命令不能很好的说明问题）：
 
 * `CLUSTER ADDSLOTS` slot1 [slot2] ... [slotN]
 * `CLUSTER DELSLOTS` slot1 [slot2] ... [slotN]
@@ -824,8 +825,8 @@ Redis集群支持在运行期间动态增删节点。增加和删除节点的方
 
 此时集群中其它节点包括客户端，都还认为哈希槽8还属于节点A，并会重定向所有关于哈希槽8的请求到节点A，所以会发生如下情况：
 
-* 还未完成迁移（还在A上）的key还继续由A处理
-* 其他已经完成迁移的请求则由B处理，因为A会把已经不在它上面的key都重定向到B节点上。
+* 还未完成迁移（还在A上）的key继续由A处理
+* 其它已经完成迁移的请求则由B处理，因为A会把已经不在它上面的key都重定向到B节点上。
 
 这种方式使得我们不需要在A节点上创建一个新key。  
 与此同时，Redis提供了一个特殊的工具 `redis-trib`，也是一个集群配置程序，它可以保证把哈希槽8已有的key从节点A移动到节点B。   
@@ -885,9 +886,9 @@ command documentation.
 ASK重定向
 ---
 
-在之前的章节，我们简要的介绍了ASK重定向。为什么不能直接使用`MOVED`错误表示重定向呢？这是因为`MOVED`表示哈希槽已被永久迁移到另外一个节点，之后的所有请求都应该发送到新的节点上。而ASK表示仅仅下一次请求发送到指定节点。
+在之前的章节，我们简要的介绍了ASK重定向。为什么不能直接使用`MOVED`错误表示重定向呢？这是因为`MOVED`表示哈希槽已被永久迁移到另外一个节点，之后的所有请求都应该发送到新的节点上。而ASK仅仅表示下一次请求需要发送到指定节点。
 
-ASK是很有必要的，因为稍后来的其他关于哈希槽8的key可能依旧在A节点上，所以总是先请求A节点，A节点发现需要重定向时再去请求B节点。由于迁移仅涉及16384个槽的其中一个，所以两次请求带来的性能损失时可以接受。
+ASK是很有必要的，因为稍后来的其它关于哈希槽8的key可能依旧在A节点上，所以总是先请求A节点，A节点发现需要重定向时再去请求B节点。由于迁移仅涉及16384个槽的其中一个，所以两次请求带来的性能损失是可以接受的。
 
 对于迁移过程中的哈希槽，我们必须确保客户端在向B节点发起请求前已经向A节点发过请求（通过ASK重定向到B），同时，如果客户端向B节点发送了ASKING命令，下一次请求的key所属的哈希槽必须是处于IMPORTING状态。
 
@@ -895,11 +896,11 @@ ASK是很有必要的，因为稍后来的其他关于哈希槽8的key可能依�
 
 从客户端的角度来看，ASK的语义如下：
 
-* 如果接收到一个ASK重定向，仅把这一个被重定向请求发送给新的节点，其他关于这个哈希槽的请求还是发送给老的节点。
-* 首先发送一个ASKING命令到新的节点上，之后再执行数据请求
-* 关于哈希槽8的请求依旧发送到节点A上
+* 如果接收到一个ASK重定向，仅把这一次被重定向请求发送给新的节点，其它关于这个哈希槽的请求还是发送给老的节点。
+* 首先发送一个ASKING命令到新的节点上，之后再执行数据请求。  
+* 关于哈希槽8的其它请求依旧发送到节点A上。  
 
-一旦哈希槽8的迁移动作完成，客户端再请求该哈希槽时，节点A会返回一个MOVED重定向消息，此时客户端就可以认为哈希槽从此以后都由节点B管辖了。  
+一旦哈希槽8的迁移动作完成，客户端再次请求该哈希槽时，节点A会返回一个MOVED重定向消息，此时客户端就可以认为哈希槽从此以后都由节点B管辖了。  
 即使有出现问题的客户端过早的认为哈希槽已经迁移到新的节点上了，也不是什么大问题，因为错误的客户端不会先发送一个ASKING命令，这样的话，新节点只要返回一个MOVED重定向错误，告诉客户端该哈希槽还在老节点上即可。
 
 哈希槽迁移的说明也在命令`CLUSTER SETSLOT`的解释文档中提到（为了文档冗余，两处都可方便查看），但是语境不同。
@@ -1023,11 +1024,11 @@ Redis集群的客户端应该尽可能的智能化，认真记录下集群中哈
    4) 1) "127.0.0.1"
       2) (integer) 7005
 ```
-每个返回数组中的前两个元素分别代表哈希槽的起始、结束位置。接下来的信息表示服务器的IP地址和端口信息。第一个IP、端口信息是管辖该哈希槽的master节点的地址信息，后续的IP、端口信息则是该master的slave节点信息，处于失败状态的slave节点不会在这里显示（slave的FAIL标记为被设置为true）。
+每个返回数组中的前两个元素分别代表哈希槽的起始、结束位置。接下来的信息表示服务器的IP地址和端口信息。第一个IP、端口信息是管辖该哈希槽的master节点的地址信息，后续的IP、端口信息则是该master的slave节点信息，处于失败状态的slave节点不会在这里显示（slave的FAIL标记位被设置为true）。
 
 比如说，第一个数组表示哈希槽5461到10922（包含起始和结尾）被节点127.0.0.1:7001管辖并提供服务，客户端也可以连接只读实例127.0.0.1:7004。
 
-命令`CLUSTER SLOTS`不保证返回的哈希槽包含集群所有的16384个哈希槽，因为存在漏配的的情况，所以客户端因为记录好哪些哈希槽是未分配的，如果用户试图访问一个属于未被分配的哈希槽的key时，则应返还一个错误。
+命令`CLUSTER SLOTS`不保证返回的哈希槽包含集群所有的16384个哈希槽，因为存在漏配的情况，所以客户端需要记录好哪些哈希槽是未分配的，如果用户试图访问一个属于未被分配的哈希槽的key时，则应返还一个错误。
 
 在向调用者返回该key所属哈希槽未被分配的错误前，Redis客户端应该尝试重新获取集群哈希槽分配关系记录，检查该哈希槽此时是否已经被分配了。
 
@@ -1140,7 +1141,7 @@ is acceptable.
 
 Redis集群中的节点不断的交换ping和pong包。两种包拥有相同的结构，并且两个包里都包含了相当重要的信息。两个包唯一的不同仅仅是消息类型而已。我们将这两种包都统称为**心跳包**。
 
-通常节点发送向另一个节点发送ping包，会使得接收者返回pong包响应。当然并不总是这样。节点也可以主动发送pong包来告诉其他节点它的配置信息，此时其它节点无需回复。这个特性非常有用，比如用来尽快向集群广播配置文件的更新信息。
+通常节点发送向另一个节点发送ping包，会使得接收者返回pong包响应。当然并不总是这样。节点也可以主动发送pong包来告诉其它节点它的配置信息，此时其它节点无需回复。这个特性非常有用，比如用来尽快向集群广播配置文件的更新信息。
 
 通常来说，一个节点会每秒随机的ping集群中一小部分节点，所以每个节点发出的ping包（以及收到pong包）的总数都会保持不变，这个总数和集群共有多少个节点无关。
 
@@ -1180,19 +1181,19 @@ Gossip sections allow receiving nodes to get information about the state of othe
 心跳包内容
 ---
 
-ping包和pong包和其他所有包一样，都包含了一个同样的数据头（例如请求故障转移时master投票的包），以及一个专门针对ping和pong包的gossip信息段。
+ping包和pong包和其它所有包一样，都包含了一个同样的数据头（例如请求故障转移时master投票的包），以及一个专门针对ping和pong包的gossip信息段。
 
 同样数据头中包含以下部分信息：
 
 * 节点ID，一个160位的随机字符串，在节点启动时随机分配，在节点的整个生命周期中，该ID都是其在集群中的唯一标示。
-* 发送节点的`当前配置版本号`和`配置版本号`属性，这是Redis集群分布式管理算法关键元素（会在下一章节描述）。如果节点是一个slave节点，那么它的`配置版本号`就是它最后一次得知的其master节点的版本号。
-* 节点标记位，表明节点是一个master还是一个slave，以及其他可能的单bit就能标示的节点信息。
+* 发送节点的`集群配置最高版本号`和`配置版本号`属性，这是Redis集群分布式管理算法关键元素（会在下一章节描述）。如果节点是一个slave节点，那么它的`配置版本号`就是它最后一次得知的其master节点的版本号。
+* 节点标记位，表明节点是一个master还是一个slave，以及其它可能的单bit就能标示的节点信息。
 * 发送节点管辖的哈希槽的位图，如果发送节点是一个slave节点，则是其master节点管辖的哈希槽的位图。
 * 发送节点对外提供服务的端口（也就是接收客户端连接的端口；加上1000则得到集群总线端口）
 * 发送节点认为的服务器的状态
 * 其master节点的节点ID（如果发送节点是个slave节点）
 
-ping包和pong包也包含一个gossip段。这个段记录了在发送者的视角里，目前集群中其它节点的状态。这个gossip段仅仅包含一部分其它节点的信息（随机的）。gossip段包含了其它节点的信息的个数取决于集群的大小。
+ping包和pong包也包含一个gossip段。这个段记录了在发送者的视角里，目前集群中其它节点的状态。这个gossip段仅仅包含一部分其它节点的信息（随机的）。gossip段包含其它节点的信息的个数取决于集群的大小。
 
 gossip段中每个节点信息都包含以下属性：
 * 节点ID
@@ -1257,19 +1258,19 @@ However the Redis Cluster failure detection has a liveness requirement: eventual
 
 Redis集群失活检测用于识别集群中那些与大多数节点都失联的master或slave节点，随后提升相应的slave节点为master节点。当发生故障时若无法将slave提升为master，那么整个集群将转为不可用状态，无法为客户端提供服务。
 
-之前已经提到，每个节点都存有其他节点的标记位信息列表。其中有两个标记位称为`PFAIL` 和 `FAIL`，专用于失活检测的。`PFAIL`表示可能失活了，是一个不完全确定的状态类型。`FAIL`则代表则一个节点已经失活，这个结果已经在指定时间内被集群中大多数节点所认同。
+之前已经提到，每个节点都存有其它节点的标记位信息列表。其中有两个标记位称为`PFAIL` 和 `FAIL`，专用于失活检测的。`PFAIL`表示可能失活了，是一个不完全确定的状态类型。`FAIL`则代表则一个节点已经失活，这个结果已经在指定时间内被集群中大多数节点所认同。
 
 **标记位PFAIL:**
 
-当一个节点发现另一个节点在`NODE_TIMEOUT`时间内都无法联系到时，它会标记该节点为`PFAIL`状态。master节点和slave节点都可以将其他节点标记为`PFAIL`状态，不管对方是master还是slave节点。
+当一个节点发现另一个节点在`NODE_TIMEOUT`时间内都无法联系到时，它会标记该节点为`PFAIL`状态。master节点和slave节点都可以将其它节点标记为`PFAIL`状态，不管对方是master还是slave节点。
 
 在Redis集群中，与某个节点失联的概念是向该节点发送的**活跃ping包**（一个还没有收到响应的ping包）等待了超过`NODE_TIMEOUT`长时间还没收到回复。为了使这种机制能正常工作，设置的`NODE_TIMEOUT`必须比一次网络请求往返花费的时间长。为了增加实际操作时的可靠性，当一个节点在`NODE_TIMEOUT/2`未收到某节点响应时就会尝试与该节点重新建立TCP连接。这个技巧保证了网络连接的问题不会导致出现节点失活的状况。
 
 **标记位FAIL**
 
-标记位`PFAIL`相当于各节点自身对其他节点状态的看法，并不会导致集群进行一次slave提升过程。一个节点从`PFAIL`状态到实际被判定为离线，需要从状态`PFAIL`转换到`FAIL`。
+标记位`PFAIL`相当于各节点自身对其它节点状态的看法，并不会导致集群进行一次slave提升过程。一个节点从`PFAIL`状态到实际被判定为离线，需要从状态`PFAIL`转换到`FAIL`。
 
-正如本文“节点心跳”章节描述的一样，每个节点都会随机向其它节点发送包含状态的gossip消息。每个节点也会从各个其他节点那里收到各个节点标记位信息。这种机制使得各个节点都有手段通知其他节点关于它所发现的某些节点失活的情况。
+正如本文“节点心跳”章节描述的一样，每个节点都会随机向其它节点发送包含状态的gossip消息。每个节点也会从各个其它节点那里收到各个节点标记位信息。这种机制使得各个节点都有手段通知其它节点关于它所发现的某些节点失活的情况。
 
 一个`PFAIL`状态在满足以下情况下会转换为`FAIL`状态：
 
@@ -1333,13 +1334,15 @@ Currently this happens only during slave promotion, as described in the next sec
 
 Redis集群使用了和Raft协议的“term”（学期）很像的一个概念。在Redis集群中使用一个叫做“版本号”（可以称之为纪元，但用熟悉的版本号更好理解，一个版本号类似一个阶段）的术语，他用于配置信息的增量控制。当多个节点提供了冲突性的配置信息时，各节点可以使用版本号来判定哪个配置信息是最新的。
 
-这个`集群状态版本号`是一个64位的无符号整型。
+这个`集群配置最高版本号`是一个64位的无符号整型。
 
-当集群节点创建时，每个节点，不管master还是slave，都将`集群状态版本号`设置为0.
+当集群节点创建时，每个节点，不管master还是slave，都将`集群配置最高版本号`设置为0.
 
-当节点收到一个消息包，如果其中发生者的版本号（在集群总线消息的通用数据头中）比当前节点的版本号大，那么`集群状态版本号`会被更新为发送者的版本号。
+当节点收到一个消息包，如果其中发生者的版本号（在集群总线消息的通用数据头中）比当前节点的版本号大，那么`集群配置最高版本号`会被更新为发送者的版本号。
 
-这种情况发生在集群状态发生了一些改变，某个节点尝试执行一些操作。
+由于这种语义（规定），最终集群中所有的节点认同最高的`配置版本号`
+
+这种情况发生在集群状态发生了一些改变，某个节点尝试执行一些对集群状态有修改的操作。
 
 目前这种情况仅仅发生在slave提升的过程中，将在下一章节描述。大致来说，版本号是一个集群的逻辑时钟，它表示版本号更大的状态信息是最新的。
 
@@ -1373,11 +1376,11 @@ are guaranteed to be new, incremental, and unique.
 
 在slave选举时会产生一个新的`配置版本号`。slave节点尝试替代失活的master节点的工作，提升它们的版本号，并征得集群中大多数master节点的授权。当slave被成功授权，会转变为master节点并会产生一个新的唯一`配置纪元`。
 
-下个章节会解释`配置`纪元如何解决不同节点声明不同配置时的冲突问题（可能是网络分区引发的节点失败）。
+下个章节会解释`配置版本号`如何解决不同节点声明不同配置时的冲突问题（可能是网络分区引发的节点失败）。
 
 从节点也会在ping包pong包带上`配置版本号`信息，但是这个`配置版本号`只是它与其master交换时获得的最新一个`配置版本号`。这使得其它节点可以很快的发现slave节点的配置是否需要更新（master节点不会给是旧`配置版本号`的slave节点投票）。
 
-每当节点的`配置版本号`被更新，都会存储在其nodes.conf文件中。`集群状态版本号`版本号也是一样。一旦更新，节点保证在执行其它操作之前，将这两个变量同步写入到本地磁盘中。
+每当节点的`配置版本号`被更新，都会存储在其nodes.conf文件中。`集群配置最高版本号`版本号也是一样。一旦更新，节点保证在执行其它操作之前，将这两个变量同步写入到本地磁盘中。
 
 当一个节点重故障中恢复，其生成`配置版本号`的是目前集群中最新的。
 
@@ -1406,6 +1409,30 @@ A slave discards any `AUTH_ACK` replies with an epoch that is less than the `cur
 Once the slave receives ACKs from the majority of masters, it wins the election.
 Otherwise if the majority is not reached within the period of two times `NODE_TIMEOUT` (but always at least 2 seconds), the election is aborted and a new one will be tried again after `NODE_TIMEOUT * 4` (and always at least 4 seconds).
 
+slave节点的选举和提升
+---
+
+slave节点的提出选举和提升master都由slave节点完成，其它master节点负责在slave提出选举后为其投票。   
+当slave节点发现它对应的的master节点被标记为`FAIL`后，会发生一次slave节点选举过程，该slave节点希望成为master来代替其原master的工作。
+
+一个slave节点想转换为master节点需要通过发起一次选举，并赢得大多数master节点的投票。如果一个master节点处于`FAIL`状态，那么它的所有slave节点都可以发起选举，但是仅仅会有一个slave节点会赢得选举并被提升为master节点。
+
+slave节点会在满足以下条件时发起选举：
+
+* 当前slave对应的master节点被标记为`FAIL`状态。
+* 并且该master节点负责管辖集群中一部分哈希槽
+* master与slave之间用于副本同步的连接在过一段时间后才会断开，这是为了保证稍后提升为master的slave节点上的数据足够新。这个时间可有用户配置。
+
+为了能够被选举上，发起选举的第一步就是将自身的`配置版本号`配置版本号加1，之后向集群中的master节点发起投票。
+
+slave节点通过发送`FAILOVER_AUTH_REQUEST`包给每个master节点来要求它们进行投票。随后slave节点最长会等待`2*NODE_TIMEOUT`长时间（至少等两秒钟），直到收集到所有的投票结果。
+
+当一个master节点已经投票给一个slave节点，会向该slave节点发送一个`FAILOVER_AUTH_ACK`包，随后的`NODE_TIMEOUT * 2`时间周期内，该master节点都无法投票给其它人。这段时间内，该master无法响应其它slave节点的授权操作。这个策略不需要保证安全，仅需要能有效防止多个slave节点同时发起选举时最终仅会有一个当选即可（多个slave节点甚至有不同的`配置版本号`），多个slave当选这种情况是我们不想看到的。
+
+在发起选举投票后，slave节点会丢弃掉`配置版本号`较低的`FAILOVER_AUTH_ACK`。这保证了slave节点不会将过期的投票当作有效票。
+
+一旦slave节点收到集群中大多数master的授权，那么它就赢得了这次选举。否则如果大多数节点都未在`2*NODE_TIMEOUT`时间内（通常至少两秒钟）响应，slave发起的这次选举会被终止，并且会在`NODE_TIMEOUT * 4`时间后（通常至少4秒钟）才再次发起选举。
+
 Slave rank
 ---
 
@@ -1431,6 +1458,31 @@ Once a slave wins the election, it obtains a new unique and incremental `configE
 In order to speedup the reconfiguration of other nodes, a pong packet is broadcast to all the nodes of the cluster. Currently unreachable nodes will eventually be reconfigured when they receive a ping or pong packet from another node or will receive an `UPDATE` packet from another node if the information it publishes via heartbeat packets are detected to be out of date.
 
 The other nodes will detect that there is a new master serving the same slots served by the old master but with a greater `configEpoch`, and will upgrade their configuration. Slaves of the old master (or the failed over master if it rejoins the cluster) will not just upgrade the configuration but will also reconfigure to replicate from the new master. How nodes rejoining the cluster are configured is explained in the next sections.
+
+slave等级
+---
+
+在一个master节点被标记为`FAIL`状态后，其slave节点在延时一小段时间后，就会尽快发起选举过程来接替master工作，具体延时多少时间的计算公式如下：
+
+    DELAY = 500 milliseconds + random delay between 0 and 500 milliseconds +
+            SLAVE_RANK * 1000 milliseconds.
+
+这个延时策略保证其master节点的`FAIL`状态已经被传播到整个集群，否则其它master节点可能还会认为该master是活跃的，从而拒绝为本slave投票。
+
+公式中的随机时间是为了避免多个slave节点在同一时间发起选举。
+
+slave等级`SLAVE_RANK`代表着它同步其master节点数据的新旧程度，数据越和master保持一致，等级越低。   
+在master节点离线时，其slave之间会交换数据，推荐一个等级最低（数据最新）的节点来提升为master：   
+数据最新的slave节点的等级被设置为0，第二新的被设置为1，以此类推。
+
+等级不是slave提升的强制条件，如果一个等级较低的（数据较新）的节点选举失败，其它节点也随后会尝试选举。
+
+一旦节点赢得选举，他会获得一个全新的、独一无二的、更大的的`配置版本号`，比其它任何已存在的master节点的`配置版本号`都大。之后它通过ping包和pong包向其它节点宣称它也成为主节点，还会带上它管辖的哈希槽范围以及它的`配置版本号`，这个`配置版本号`比其它任何节点的都大。
+
+为了加速集群状态变更信息的传播，pong包会在集群中所有节点进行广播。那些之前不可达的节点最终也会更新到最新的集群状态，要么是收到其它节点的ping包和pong包后更新本地配置，或者是在发送旧版本的心跳信息给其它节点时会收到反馈的`UPDATE`包，从而更新本地配置。
+
+其它节点发现有一个`配置版本号`更高的slave节点取代了之前的master节点，并管辖着原master的哈希槽，它们会更新本地配置，认同这个改变。原master节点的其它slave节点（或又重新恢复的原master节点）并不会马上更新这个配置，当时也会连接到新的master，并从新master同步数据。如何让原master节点重新加入到集群将在下一章节描述。
+
 
 Masters reply to slave vote request
 ---
@@ -1458,6 +1510,32 @@ Master `currentEpoch` is 5, lastVoteEpoch is 1 (this may happen after a few fail
 6. When a master refuses to vote for a given slave there is no negative response, the request is simply ignored.
 7. Masters don't vote for slaves sending a `configEpoch` that is less than any `configEpoch` in the master table for the slots claimed by the slave. Remember that the slave sends the `configEpoch` of its master, and the bitmap of the slots served by its master. This means that the slave requesting the vote must have a configuration for the slots it wants to failover that is newer or equal the one of the master granting the vote.
 
+master节点对投票请求的响应策略
+---
+
+前面章节讨论了slave节点如何尝试被选举为master。这个章节将从master节点的角度阐述在某个slave提出选举后所发生的事情。
+
+首先master节点收到了slave节点的`FAILOVER_AUTH_REQUEST`请求，代表着要给它投票。
+
+为了达成一个有效的投票，必须遵循以下条件：
+
+1. 一个master仅对一个版本号投一次票，并且拒绝为旧的版本号投票：每个master节点都有一个lastVoteEpoch属性，它会拒绝为投票请求包中`集群配置最高版本号`小于lastVoteEpoch的节点投票。当一个master为某一个节点投票，lastVoteEpoch会被更新并安全的存储在磁盘中。
+2. 一个master节点仅在其master节点处于`FAIL`时才为其slave节点投票提升。
+3. 授权请求中的`集群配置最高版本号`如果小于master的`集群配置最高版本号`，那么该请求会被忽略。因为master节点的回复总是带有相同的`集群配置最高版本号`。如果同一个slave节点提升了自己的`集群配置最高版本号`并再次发起投票请求，这种策略可以保证旧的投票结果不会影响新一轮的投票过程。
+
+不使用上述规则3会出现问题的场景举例：
+
+假设有一个master，`集群配置最高版本号`是5，lastVoteEpoch是1（这在发生选举失败情况下是可能的）
+
+* slave节点的`集群配置最高版本号`是3。
+* slave节点尝试发起选举，版本号是4（3+1），master节点回复了OK并带上其`集群配置最高版本号`是5，但是这个响应在网络中阻塞了。
+* 由于没收到投票结果，slave节点尝试再次发起选举，这次使用的版本是5（4+1），之前阻塞的响应现在达到了该slave节点，导致它错误的以为这是一个来自master的有效票。   
+ 
+4. 如果master节点已经给失败master的其中一个slave投过票，那么在接下来的 `NODE_TIMEOUT * 2`时间内，它不会给该失败master的其它slave节点投票。这个不是强制约定，因为不可能有多个slave赢得选举。但在实际的操作中，这确保当一个节点当选时，它有足够的时间来通知其它节点。   
+5. master节点不负责挑选最好的slave节点来继承失败的master。如果一个slave的master节点处于`FAIL`状态并且没有投票，那么就默认处理为“认同”。最好的（数据最新的）的slave节点最可能在其它前赢的选举，这是因为由于其`SLAVE_RANK`更低，他会更早的开始发起选举，这个在之前的章节已经阐述了过。
+6. 如果一个master节点对slave的提权请求不认同，并不会发送一个“不认同”的响应，而是直接忽略这个请求。
+7. master节点不会给`配置版本号`比他认为的这些哈希槽的最高`配置版本号`还低的节点投票。slave节点发送的`配置版本号`其实是它从其master节点同步过来的，以及从master同步来的管辖哈希槽的位图。也就是说发起选举的slave节点必须有一份关于其想管辖的哈希槽的最新配置信息。
+
 Practical example of configuration epoch usefulness during partitions
 ---
 
@@ -1480,6 +1558,25 @@ As you'll see in the next sections, a stale node rejoining a cluster
 will usually get notified as soon as possible about the configuration change
 because as soon as it pings any other node, the receiver will detect it
 has stale information and will send an `UPDATE` message.
+
+配置版本号有效性举例
+---
+
+本章节用于说明版本号概念如何使得slave提升的过程在存在网络分区情况也能很好的进行。
+
+* 一个master节点失活了，它有3个slave节点，分别是：A，B，C
+* A节点赢得了选举并被提升为master
+* 由于分区导致A节点与集群中大多数节点失联
+* 网络分区问题又恢复了，A再次可达
+
+此时B节点离线了，A节点再次变得可用并认为自己是master节点（实际上它会收到`UPDATE`消息来正确更新其配置，这里我们假设这些消息都丢失了）。此时，C节点也会尝试发起选举（它认为A也挂了），会发生以下情况：
+
+1. C发起了选举并赢得选举，因为集群中大多数节点都认为A离线了。这是C会生成一个更大的`配置版本号`。
+2. A无法向集群其它节点宣称它还管辖之前那些哈希槽，因为它们有一个`配置版本号`
+更大的配置信息表明这些哈希槽已经属于C管辖。
+3. 所以此时所有节点都会认为这些哈希槽已有C管辖，整个集群继续正常运行。
+
+在后续的章节你会看到，一个新加入集群的节点在向其它节点发送ping包时，会通过收到带有最新状态信息的`UPDATE`消息，从而尽快得知集群状态信息的改变。
 
 Hash slots configuration propagation
 ---
@@ -1555,6 +1652,70 @@ The same happens during reshardings. When a node importing a hash slot
 completes the import operation, its configuration epoch is incremented to make
 sure the change will be propagated throughout the cluster.
 
+哈希槽配置传播
+--- 
+
+Redis集群一项重要的内容就是在节点间传播哈希槽分配情况的机制。这个机制对于新加入节点或者由于节点失败而被新提升为master的节点获取配置信息都非常重要。
+
+相同的机制使得节点在分区失败后一段时间内能再次加入集群中。
+
+哈希槽分配关系有两种途径来传播：
+
+1. 心跳包消息。ping包和pong的发送者总是带上其管辖的哈希槽范围（如果是slave则是其对应master的）
+2. `UPDATE`消息，由于每个心跳包中都有`配置版本号`消息以及所管辖的哈希槽范围，接收者如果发现发送者的配置信息已经过时了，则会发送一个带有最新配置信息的包，强制发送者更新本地配置信息。
+
+接收到一个含新配置信息的心跳包或者`UPDATE`包，接收者会以非常简单的方式更新它本地的哈希槽映射关系记录。新创建一个节点时，它的本地哈希槽映射关系记录被初始化`NULL`，这样每个哈希槽都与其它节点没有关系，像这样：
+
+```
+0 -> NULL
+1 -> NULL
+2 -> NULL
+...
+16383 -> NULL
+```
+
+更新本地哈希槽映射关系记录的第一条规则时：
+
+**规则1**：如果一个哈希槽还未被分配（指向`NULL`），此时有一个集群中的节点说明要管辖该哈希槽，我则会修改我本地的哈希槽关系记录，将该哈希槽指向这个节点。
+
+所以如果收到一个A节点的心跳包表示它想接手管辖哈希槽1和哈希槽2，配置版本号是3（比较高），那么本地的哈希槽映射关系表会被修改为：
+
+```
+0 -> NULL
+1 -> A [3]
+2 -> A [3]
+...
+16383 -> NULL
+```
+
+
+当新创建一个集群，系统管理员需要手动给每个master分配独立哈希槽（通过`CLUSTER ADDSLOTS`命令、通过redis-trib工具或者其它方式），并且这个分配信息会迅速在集群内传播。
+
+仅有这一条规则是不够的。我们知道哈希槽分配关系在以下两种条件下会发生改变：
+
+1. 一个slave节点接替了它离线的master的工作
+2. 一个哈希槽被分配到了其它节点上
+
+目前我们先关注由于故障原因引发的分配关系变化。当slave接替了故障master的工作，它获取了一个比原master更大的`配置版本号`（其实也是有史以来最大的`配置版本号`）。比如说，节点B是节点A的slave，可能在A失活时替代它，并获得`配置版本号`4。它会根据第二条规则，开始发送心跳包（第一次广播是发送给整个集群）给其它部分节点，收到的节点则会更新它们本地的哈希槽分配关系记录：
+
+**规则2**：当有一个集群中的节点提出想对已经分配的哈希槽进行管辖，如果提出者的`配置版本号`比当前管辖该哈希槽点的master的`配置版本号`大，我就会将这个哈希槽重新指向这个新节点。
+
+所以在收到B节点关于想管辖哈希槽1和哈希槽2的消息并发现它的`配置版本号`大于之前的A的3后，接收者会更新本地的哈希槽关系记录表：
+
+```
+0 -> NULL
+1 -> B [4]
+2 -> B [4]
+...
+16383 -> NULL
+```
+
+活性特性：由于第二条规则，最终集群中的所有节点都会一致认为哈希槽属于`配置版本号`最大的那个节点。
+
+这个机制在Redis集群的**last failover wins**（最后被选上也就是版本号最大的master说了算）。
+
+同样的情况在集群重分配时也会发生。当一个节点引入一个哈希槽并完成操作后，它会增加自己的`配置版本号`，确保这个变更在集群中传播后能被其它节点认同。
+
 UPDATE messages, a closer look
 ---
 
@@ -1566,6 +1727,11 @@ the same hash slots are associated with node B having an higher configuration
 epoch. Because of this they'll send an `UPDATE` message to A with the new
 configuration for the slots. A will update its configuration because of the
 **rule 2** above.
+
+细看UPDATE消息
+---
+
+从之前的章节中可以看出一个UPDATE消息是如何工作。节点A可能在一段时间后又重新加入到集群中。它又会发送心跳包宣称它负责管辖哈希槽1和哈希槽2，此时它带上的`配置版本号`是3。其它节点都已经知道这两个哈希槽已经被`配置版本号`更高的B节点管辖了。因此它们会发送一个`UPDATE`消息给A告诉它最新的配置情况。A在收到这个消息之后，会按照规则2更新自己的本地配置。
 
 How nodes rejoin the cluster
 ---
@@ -1587,6 +1753,19 @@ During reconfiguration, eventually the number of served hash slots will drop to 
 
 Slaves do exactly the same: they reconfigure to replicate the node that
 stole the last hash slot of its former master.
+
+节点如何重新加入集群
+---
+
+在节点重新加入集群时会使用相同的基本策略。继续以上面的例子来说，节点A会意识到哈希槽1和哈希槽2已经是由节点B管辖了。假设这是节点A唯一管辖的两个哈希槽，那么之后节点A管辖的哈希槽数量为0。所以此时A会配置为新的master的一个slave节点。
+
+实际的处理规则比这说的稍微复杂一点。A可能在很久之后才重新加入节点，与此同时，原来属于A管辖的哈希槽可能分别由不同的节点管辖，比如哈希槽1由节点B管辖，哈希槽2由节点C管辖。
+
+所以实际的**Redis集群节点角色切换规则**是：原masterA节点会成为其原管辖哈希槽中的最后一个哈希槽所属节点的slave节点。
+
+在重配置期间，最终节点管辖的哈希槽数量会变为0，随后节点会相应的被重配置。在一般情况下，规则2意味着失败的master在重加入后会成为替代它的工作的节点的slave节点。但是规则2还涵盖了各种特殊情况的处理。
+
+slave失败后重入也是同样的规则，它们成为原先master最后一个哈希槽当前所属节点的slave节点。
 
 Replica migration
 ---
@@ -1627,6 +1806,29 @@ following:
 * Three hours later A1 fails as well.
 * C2 is promoted as new master to replace A1.
 * The cluster can continue the operations.
+
+副本迁移
+---
+
+Redis集群实现了一种叫做“副本迁移”的概念来提高系统的可用性。该方法是将节点分为master和slave，这种方法带来的可用性是有限的，如果多个节点逐渐坏掉，最终将导致系统不可用。
+
+比如说有一个集群，每个master节点都有一个slave节点，集群在一个任意一个master或者其slave坏掉的情况下都可以正常工作，但是一起坏掉则不行。及时是节点逐个由于硬件或软件问题发生故障，越到后面故障可能造成的影响越严重。举个例子说明：
+
+* master节点A有一个slave节点名为A1。
+* 节点A离线了，A1接替了它成为master节点。
+* 3个小时后，A1节点也发生了故障（此次故障原因和之前A节点失活无关）。此时由于A和A1都离线了，没有其它slave节点能接替A1的工作。这时集群无法正常提供服务了。
+
+如果master和slave的映射关系是固定的，唯一增加集群可靠性的办法就是为每个master增加slave节点，但是这样做单价还是比较高的，需要更多的Redis实例以及更多的内存等等。
+
+一个替代的办法是创建一个不对称的集群，让集群的节点布局方式随着时间改变。举例来说，节点有3个master节点分别为A、B、C，其中A和B都各有一个slave节点分别称之为为A1和B1。但是C节点则有两个slave节点：C1和C2。
+
+副本迁移机制使得集群会自动将多余的slave节点迁移给没有冗余备份的master节点（也就是没有slave节点）。通过副本迁移机制，上面的例子变成了以下场景：
+
+* 节点A离线，A1节点被提升为master接替A的工作。
+* 集群把C2节点迁移给A1作为它的slave，因为此时A1节点已经没有slave了。
+* 3个小时以后A1节点离线了。
+* C2节点被提升为master节点替代A1。
+* 集群可以继续对外提供服务
 
 Replica migration algorithm
 ---
@@ -1673,6 +1875,23 @@ must be left with before a slave can migrate away. For example, if this
 parameter is set to 2, a slave can try to migrate only if its master remains
 with two working slaves.
 
+副本迁移算法
+---
+
+副本迁移的算法不使用任何协议，因为它并不像集群配置一样需要考虑到配置的版本号信息。并且副本迁移算法要避免当master节点缺少冗余备份时发生大量副本迁移的情况。副本迁移算法确保最终（当集群配置信息稳定后）每个master节点都至少有一个slave节点。
+
+这个算法是这样的。首先我们需要定义什么是集群中的*可用slave*：也就是那些在指定节点看来状态不是`FAIL`状态的节点。
+
+当有节点发现集群中存在没有冗余备份的master节点时，算法就会被触发执行。虽然所有节点都能发现这个条件，但是只有一部分节点会实际执行算法。实际上这一部分节点通常是一个节点，除非集群中的节点对某个节点的状态的看法有所不同。
+
+*可迁移slave*是集群中拥有最大slave节点的master的节点ID最小的正常slave。
+
+所以如果集群中有10个master节点，各有1个slave节点，以及另外两个master节点，有5个slave节点，等会可迁移slave一定会在后面这两个节点中产生，是节点ID最小的那个。由于没有使用协议，当集群状态不稳定时，有可能出现出现竞态条件，多个slave都认为它是节点ID最小的那个可迁移节点（实际环境中不太可能发生）。如果这个情况发生了，结果就是多个slave都迁移到了某个master下面，这样也没有问题。即使这种竞争情况把本来较多slave的master节点下的所有slave节点都迁移走了，一旦集群恢复稳定，算法又会迁移部分节点回到该master下。
+
+算法最终的效果是，每个master节点保证会至少有一个slave节点作为备份。正常的情况下，算法所做的就是将一个有多个slave节点master节点下的其中一个slave迁移给那些没有slave节点的master。
+
+这个算法可以通过`cluster-migration-barrier`参数进行微调：较强壮的master节点至少还存留几个节点才能分发slave给其它弱小的master。比如说这个参数别设置为2，那么slave较多的master节点，至少保证自己还剩两个节点的情况下，才会把自己的slave节点拿出来分给别人。
+
 configEpoch conflicts resolution algorithm
 ---
 
@@ -1697,8 +1916,7 @@ Usually a real world resharding involves moving several hundred hash slots
 configuration epochs during reshardings, for each hash slot moved, is
 inefficient. Moreover it requires an fsync in each of the cluster nodes
 every time in order to store the new configuration. Because of the way it is
-performed instead, we only need a new config epoch when the first hash slot is moved,
-making it much more efficient in production environments.
+performed instead, we only need a new config epoch when the first hash slot is moved,making it much more efficient in production environments.
 
 However because of the two cases above, it is possible (though unlikely) to end
 with multiple nodes having the same configuration epoch. A resharding operation
@@ -1734,6 +1952,40 @@ used) since `redis-trib` makes sure to use `CONFIG SET-CONFIG-EPOCH` at startup.
 However if for some reason a node is left misconfigured, it will update
 its configuration to a different configuration epoch automatically.
 
+配置冲突解决算法
+---
+
+当在故障恢复期间，通过slave提升产生一个新的`配置版本号`时，这个版本号保证是唯一的。
+
+然后有两个特殊情况将导致没有安全的创建`配置版本号`，仅仅将本地的`集群配置最高版本号`加1，然后期待同一时间不会有冲突。  
+这两种情况都是由系统管理员手动触发的：
+
+1. 带`TAKEOVER`选项的`CLUSTER FAILOVER`命令可以手动将一个slave节点提升为master，*无需等待大多数master节点可用及同意*。  
+这个在多数据中心配置时很有用。
+2. 为重平衡节点压力而做的迁移哈希槽动作也会在节点内产生一个新的`配置版本号`，由于性能原因，也不需要集群中大多数master节点认同。
+
+具体的说，在集群重新分片的时候，当一个哈希槽从节点A迁移到节点B，重分片程序会强制B更新它的配置，与目前集群中最大`配置版本号`的配置信息同步，之后生产新的`配置版本号`等于最大的`配置版本号`加1（除非该节点本身就拥有那个最大的`配置版本号`），此次版本号变更不需要集群其它节点同意。    
+实际场景中，一般会移动上百个哈希槽（特别是在小集群中）。如果每次哈希槽移动产生的新`配置版本号`都需要集群其它节点同意，那是非常低效的。此外，这还需要每个集群中的节点在产生新`配置版本号`时都通过fsync存储将其存储到磁盘中。正因为我们使用了这种模式，我们只需要在第一个哈希槽迁移时产生一次新的`配置版本号`即可，这样迁移过程在实际的生产环境中就高效多了。
+
+然后由于以上处理方式，有可能（实际上不太可能）导致不同节点拥有相同的`配置版本号`。一次重分片操作是由系统管理员手动执行的，但同时又发生了故障恢复过程（加上有点坏的运气）会导致`集群配置最高版本号`传播的不够快，从而造成冲突。
+
+此外，软件bug以及文件系统错误也会导致不同节点持有相同的`配置版本号`。
+
+当管辖不同的哈希槽的master节点持有相同的`配置版本号`时，不会有问题。因为更关键的是slave节点替代master后有一个独立的`配置版本号`即可。
+
+也就是说，手工干预或重分片或许会导致集群配置不协调。Redis集群的活性要求哈希槽的配置总是全局传播的，所以在任何情况下，我们都希望每个master拥有不一样的`配置版本号`。
+
+为了达到这个目标，**一个有效的版本号冲突解决办法**专门用来解决来个节点持有相同的`配置版本号`的情况。
+
+* 如果一个master节点发现另外一个master持有和他相同的`配置版本号`。
+* 并且如果当前节点的节点ID比持有相同`配置版本号`的节点小的话。
+* 那么它就将它的`集群配置最高版本号`加1，作为新的`配置版本号`。
+
+如果存在一些`配置版本号`相同的节点，那么最终仅仅有节点ID最大的节点会保留这个`配置版本号`，有了这个保证，无论发生什么，集群中的节点总是有不同的`配置版本号`。
+
+这个机制也保证了当一个新的集群创建时，每个节点初始化的`配置版本号`都是不相同的（即使没用到），因为`redis-trib`工具会在初始化时执行`CONFIG SET-CONFIG-EPOCH`。即使管理员遗漏了某个节点的配置，该节点也会自动更新到一个唯一的`配置版本号`。
+
+
 Node resets
 ---
 
@@ -1762,6 +2014,29 @@ The following is a list of operations performed by a reset:
 
 Master nodes with non-empty data sets can't be reset (since normally you want to reshard data to the other nodes). However, under special conditions when this is appropriate (e.g. when a cluster is totally destroyed with the intent of creating a new one), `FLUSHALL` must be executed before proceeding with the reset.
 
+节点重置
+---
+
+节点可以被软重置（无需重启节点），以便能够更改其在集群中的角色或者加入其它的节点。这种特性在普通操作，测试，云环境中都很有用，指定节点可以被重置并加入其它集群。
+
+在Redis中可以使用`CLUSTER RESET`来重置集群。这个命令有两种用法：
+
+* `CLUSTER RESET SOFT`
+* `CLUSTER RESET HARD`
+
+重置命令必须直接发给需要被重置的节点。如果命令不指定重置类型，将默认使用`SOFT `模式进行软重置。
+
+节点被重置将发生以下事情：
+
+1. 软重置和硬重置都会发生：如果节点是一个slave，则它会变为master，所有数据会被丢弃。如果节点本身就是一个master并且存有数据，那么重置操作将被中断。
+2. 软重置和硬重置都会发生：所有的哈希槽都会被释放，故障迁移状态将被设置。
+3. 软重置和硬重置都会发生：节点会将在节点列表里的其它节点移除，从此该节点不再知道其它任何节点。
+4. 硬重置独有：`集群配置最高版本号`, `配置版本号`, and `最后投票版本号` 被设置为0。
+5. 硬重置独有：节点ID被替换为一个全新的随机ID。
+
+有数据的master节点无法被重置（你应该先把数据迁移到其它节点上）。当然，某些特殊场景你也可以强行这么做（比如说一个集群已经彻底没用了，你准备创建一个新的集群），你可以先使用`FLUSHALL`命令清空数据，随后再进行重置。
+
+
 Removing nodes from a cluster
 ---
 
@@ -1769,10 +2044,6 @@ It is possible to practically remove a node from an existing cluster by
 resharding all its data to other nodes (if it is a master node) and
 shutting it down. However, the other nodes will still remember its node
 ID and address, and will attempt to connect with it.
-
-For this reason, when a node is removed we want to also remove its entry
-from all the other nodes tables. This is accomplished by using the
-`CLUSTER FORGET <node-id>` command.
 
 The command does two things:
 
@@ -1782,6 +2053,23 @@ The command does two things:
 The second operation is needed because Redis Cluster uses gossip in order to auto-discover nodes, so removing the node X from node A, could result in node B gossiping about node X to A again. Because of the 60 second ban, the Redis Cluster administration tools have 60 seconds in order to remove the node from all the nodes, preventing the re-addition of the node due to auto discovery.
 
 Further information is available in the `CLUSTER FORGET` documentation.
+
+从集群中删除节点
+---
+
+Redis集群允许从集群中移除一个节点，把它上面的数据迁移到其它节点（如果节点是master节点的话），最后将其关闭。移除后，节点还是会记得集群中其它节点的ID和地址信息，并会尝试连接他们。
+
+因为这个原因，我们在移除节点时还希望删除其它节点对它的记忆。此时我们可以使用`CLUSTER FORGET <node-id>`命令。
+
+这个命令做了以下两件事：
+
+1. 它移除了本地信息表中关于指定节点ID的信息。
+2. 它设置了一个60秒的禁令，避免该节点又被重新加入集群。
+
+第二个操作是有必要的，因为Redis集群使用gossip协议来自动发现节点，所以移除从A那里移除X，但是集群中的B节点又将X重新介绍给了A。因为60秒时间的禁令，redis集群工具有60秒的时间从其它节点也将该节点记录去除，防止了待删节点再次加入集群。
+
+更详细的信息在`CLUSTER FORGET`命令解释文档中。
+
 
 Publish/Subscribe
 ===
@@ -1794,8 +2082,17 @@ The current implementation will simply broadcast each published message
 to all other nodes, but at some point this will be optimized either
 using Bloom filters or other algorithms.
 
+发布订阅
+===
+
+在Redis集群中，客户端可以在任意节点上订阅，也可以在任意节点上发布消息。Redis集群会保证发布的消息会正确的传输给订阅者。
+
+目前的实现策略是简单的将消息广播给集群中所有节点，但是后续这个会被处理成使用布隆过滤器过滤，仅传输到有订阅者的节点或者使用其它更好的算法。
+
 Appendix
 ===
+
+查表法实现的CRC16算法。
 
 Appendix A: CRC16 reference implementation in ANSI C
 ---
