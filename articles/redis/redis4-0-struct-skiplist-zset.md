@@ -1,8 +1,7 @@
 > 笔者博客地址： https://charpty.com
 
-
-为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
-> https://github.com/charpty/redis4.0-source-reading
+> 为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
+> https://github.com/charpty/redis-source-reading
 
 
 在```Redis```中提供了有序集合，从它的命令之多就可以知道它的功能是比较强大的，当然实现也是比较复杂的，```ZSET```底层使用跳表```SKIP LIST```实现，在Java中也有跳表主要用于实现并发访问。

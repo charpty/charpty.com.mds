@@ -1,8 +1,7 @@
-> 笔者博客地址： https://charpty.com/blog
+> 笔者博客地址： https://charpty.com
 
-
-为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
-> https://github.com/charpty/redis4.0-source-reading
+> 为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
+> https://github.com/charpty/redis-source-reading
 
 上一章讲了SDS动态字符串，大概讲了看的方向，其实更深层次的还是要请读者自己看源码，我将源码加上了注释，这样大家看起来也更加的方便，本文讲Redis中的链表。
 

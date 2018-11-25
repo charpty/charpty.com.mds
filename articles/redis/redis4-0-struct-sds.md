@@ -1,9 +1,11 @@
+> 笔者博客地址： https://charpty.com
+
+> 为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
+> https://github.com/charpty/redis-source-reading
 
 Redis官方在2016年12月发布了4.0-rc1版本，从此揭开了4.0版本的序幕，但到目前为止（2017年6月）还没有正式发布4.0版本提供给生产环境使用，笔者在2.8时代开始接触Redis，在做的几个项目中也都使用它作为缓存和数据交换的渠道，想着前辈们把3.0版本都源码解析的都差不多了，网上4.0版本解析却很少，所以和大家共同分享下Redis源码阅读的经历。
 本文所指的新特性对比的是 https://github.com/antirez/redis 仓库中3.0分支和4.0分支的差异。
 
-> 为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
-> https://github.com/charpty/redis4.0-source-reading
 
 
 ## SDS动态字符串

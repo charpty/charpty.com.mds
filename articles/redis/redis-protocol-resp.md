@@ -1,9 +1,7 @@
-> 本文地址：https://charpty.com/article/redis-protocol-resp  
 > 笔者博客地址： https://charpty.com
 
-
-为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
-> https://github.com/charpty/redis4.0-source-reading
+> 为了大家看整体源码方便，我将加上了完整注释的代码传到了我的github上供大家直接下载：
+> https://github.com/charpty/redis-source-reading
 
 ```RESP```全称为```Redis Serialization Protocol```，是Redis的客户端与服务端进行通信的标准协议。客户端只要按照规则发送简单的几行字符串，服务端的响应同样也是简单的几行字符串，```RESP```看名字就是为```Redis```量身定制的，但是官方也建议可以扩展到其它场景使用。 
 

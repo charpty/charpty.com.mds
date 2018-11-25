@@ -1,0 +1,15 @@
+[
+  {
+    "name": "my-micro-service-view",
+    "type": 10,
+    "title": "我的微服务实践理念",
+    "tags": "micro-service spring-cloud",
+    "summary": "微服务最近很火，在一个小团队中全面使用微服务需要开发者的勇气和完善的配套，我将自己结合实际业务场景和公司目前的开发情况所总结的微服务实践经验，以及想要改进的方向做一个整理",
+    "coverImage": "",
+    "groupName": "micro",
+    "creator": "charpty",
+    "creationDate": "2018-01-10 00:00:00",
+    "modificationDate": "2018-01-10 00:00:00",
+    "displayOrder": 100
+  }
+]
