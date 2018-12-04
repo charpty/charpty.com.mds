@@ -17,6 +17,8 @@
 
 对应的我们称被这3个类加载器加载的class文件路径为：`bootStrapPath`、`extPath`、`userPath `，其中AppClassLoader也称为SystemClassLoader，它用于加载系统（用户的项目）里的class文件，所以称这些class的路径为userPath更加形象。
 
+> classpath.c
+
 ``` c
 typedef struct ClassPath
 {
@@ -25,27 +27,41 @@ typedef struct ClassPath
     char *userPath;
     char *(*readClass)(ClassPath *classPath, char *classname);
 } ClassPath;
+
+SClass *readClass(ClassPath *classPath, char *classname)
+{
+    SClass *r;
+    if ((r = readBootStrap(classPath, classname)) != NULL)
+        return r;
+    else if ((r = readExt(classPath, classname)) != NULL)
+        return r;
+    else
+        return readUser(classPath, classname);
+}
 ```
 
 ### 从jar包中加载
 
 jar包本质上就是zip压缩包，所以我们使用[libzip](https://libzip.org/)来读取它。
 
-```
+> classpath.c
+
+``` c
 SClass *readClassInJar(char *jarPath, char *classname)
 {
     int err;
     struct zip *z = zip_open(jarPath, 0, &err);
-    if (err != 0)
+    // TODO I can't find err code >39 means in zip.h
+    if (err != 0 && err < 39)
     {
-        LOG_ERROR("open jar file %s failed, error code is: %d", jarPath, err);
+        LOG_ERROR(__FILE__, __LINE__, "open jar file %s failed, error code is: %d", jarPath, err);
         return NULL;
     }
+
     const char *name = classname;
     struct zip_stat st;
     zip_stat_init(&st);
     zip_stat(z, name, 0, &st);
-
     if (st.size <= 0)
         return NULL;
     char *contents = malloc(st.size);
@@ -54,7 +70,8 @@ SClass *readClassInJar(char *jarPath, char *classname)
     zip_fclose(f);
     zip_close(z);
 
-    SClass *r = (SClass *)malloc(sizeof(struct SClass));
+    struct SClass *r = (SClass *)malloc(sizeof(struct SClass));
+    r->len = st.size;
     r->bytes = contents;
     r->name = classname;
     return r;
@@ -66,41 +83,44 @@ SClass *readClassInJar(char *jarPath, char *classname)
 
 仅看第一层内容，`ClassFile`并不复杂。
 
+> classfile.c
+
 ``` c
 // 属性命名和oracle虚拟机规范尽量保持一直(规范中属性名都使用下划线，但结构体我习惯用驼峰形式)
 // https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html
-typedef struct ClassFile
+ClassFile *readAsClassFile(ClassReader *r)
 {
-    // cafebabe
-    uint32_t magic;
-    // 编译该class时用的JDK版本号，如52代表JDK8
-    uint16_t minor_version;
-    uint16_t major_version;
-    // 该文件的常量池，有些会成为运行时常量池的一部分
-    CP *constant_pool;
-
-    // 类的访问控制，有是否public、是否final、是否抽象等等
-    uint16_t access_flags;
-    // 指向CONSTANT_Class_info（class权限定名）的地址
-    uint16_t this_class;
-    // 指向父类CONSTANT_Class_info
-    uint16_t super_class;
-    // 只可以继承一个父类，但是可以实现多个接口
-    uint16_t interfaces_count;
-    uint16_t *interfaces;
-    // 类中的各种属性，包括静态的和成员的
-    uint16_t fields_count;
-    MemberInfos *fields;
-    // 各个方法的方法签名
-    MemberInfos *methods;
-    // 属性表，代码的字节码、异常表等大量信息都存在这里，比较复杂
-    AttributeInfos *attributes;
-
-    ClassFile *(*readAsClassFile)(ClassReader *r);
-} ClassFile;
+    ClassFile *rs = (ClassFile *)malloc(sizeof(struct ClassFile));
+    // 读取版本信息
+    rs->magic = readUint32(r);
+    checkMagic(rs->magic);
+    rs->minor_version = readUint16(r);
+    rs->major_version = readUint16(r);
+    checkClassVersion(rs->major_version, rs->minor_version);
+    // 读取常量池，动长
+    struct CP *csp = readConstantPool(r);
+    rs->constant_pool = csp;
+    // 访问标志，是一个位图标记，记录了类的访问级别，类是否为final，是否是注解类型等等
+    rs->access_flags = readUint16(r);
+    // 当前类名在常量池中的索引
+    rs->this_class = readUint16(r);
+    // 当前类父类名在常量池中的索引
+    rs->super_class = readUint16(r);
+    // 读取该类实现的所有的接口
+    rs->interfaces = readUint16s(r, &(rs->interfaces_count));
+    // 读取当前类的属性，包括静态属性
+    rs->fields = readMembers(r, csp);
+    // 读取当前类的方法信息，包括静态方法
+    rs->methods = readMembers(r, csp);
+    // 读取剩余的不包含在方法或者字段里的其它属性表信息
+    rs->attributes = readAttributes(r, csp);
+    return rs;
+}
 ```
 
 我们第一步要做的就是将class文件里的内容解析为这么一个不太复杂的结构体，仅有这么一个结构体还不够，为了统一表示对一个class文件的读取操作，我们使用一个叫`ClassReader`的结构体表示该操作。
+
+> classreader.h
 
 ``` c
 typedef struct ClassReader
@@ -111,35 +131,41 @@ typedef struct ClassReader
     unsigned char *data;
 } ClassReader;
 
-uint8_t readUint8(ClassReader *r);
+// 提供了以下几种读取方式
+static uint8_t readUint8(ClassReader *r);
+static uint16_t readUint16(ClassReader *r);
+static uint32_t readUint32(ClassReader *r);
+static uint64_t readUint64(ClassReader *r);
+static uint16_t *readUint16s(ClassReader *r, u_int16_t *size);
+static char *readBytes(ClassReader *r, u_int32_t n);
 
-uint16_t readUint16(ClassReader *r);
-
-uint32_t readUint32(ClassReader *r);
-
-uint64_t readUint64(ClassReader *r);
-
-uint16_t *readUint16s(ClassReader *r, u_int32_t *size);
-
-char *readBytes(ClassReader *r, u_int32_t n, u_int32_t *size);
 ```
 
 可以看出，同时对应该结构体也准备了一系列读取方法，几个典型实现如下：
 
+> classreader.h
+
 ``` c
-uint32_t readUint32(ClassReader *r)
+static uint16_t readUint16(ClassReader *r)
 {
-    return *(uint32_t *)r;
+    return (uint16_t)r->data[r->position++] << 8 | (uint16_t)r->data[r->position++];
 }
 
-uint64_t readUint64(ClassReader *r)
+static uint32_t readUint32(ClassReader *r)
 {
-    return *(uint64_t *)r;
+    u_int8_t x1 = r->data[r->position++];
+    u_int8_t x2 = r->data[r->position++];
+    u_int8_t x3 = r->data[r->position++];
+    u_int8_t x4 = r->data[r->position++];
+    // *(uint32_t *)(r->data + r->position);
+    return (uint32_t)x1 << 24 | (uint32_t)x2 << 16 | (uint32_t)x3 << 8 | (uint32_t)x4;
 }
 
-uint16_t *readUint16s(ClassReader *r, u_int32_t *size)
+... 其它函数
+
+static uint16_t *readUint16s(ClassReader *r, u_int16_t *size)
 {
-    uint16_t *rs = malloc((*size = readUint16(r)) * sizeof(u_int16_t));
+    uint16_t *rs = (uint16_t *)malloc((*size = readUint16(r)) * sizeof(u_int16_t));
     for (int i = 0; i < (*size); i++)
     {
         rs[i] = readUint16(r);
@@ -149,6 +175,8 @@ uint16_t *readUint16s(ClassReader *r, u_int32_t *size)
 ```
 
 有了这两个基础，剩下的事情就是按字节和规律一个个读取了。
+
+> classfile.c
 
 ``` c
 ClassFile *readAsClassFile(ClassReader *r)
@@ -187,6 +215,8 @@ ClassFile *readAsClassFile(ClassReader *r)
 ### Class中的常量池
 当前这个常量池和后面运行时数据区的常量池不同，它仅是当前这个class文件里使用的。
 
+> constant_pool.h
+
 ``` c
 typedef struct CPInfo
 { 
@@ -206,20 +236,24 @@ typedef struct CP
 
 接下来的任务是将class字节码的常量池部分解析成常量池对应结构体。
 
+> constant_pool.h
+
 ``` c
-CP *readConstantPool(ClassReader *r)
+static CP *readConstantPool(ClassReader *r)
 {
     CP *rs = (CP *)malloc(sizeof(struct CP));
     int cpCount = readUint16(r);
+    rs->len = cpCount;
     rs->infos = (CPInfo **)malloc(cpCount * sizeof(CPInfo *));
 
-    for (int i = 0; i < cpCount; i++)
+    // 常量池从下标1开始
+    for (int i = 1; i < cpCount; i++)
     {
         rs->infos[i] = readConstantInfo(r, rs);
         // http://docs.oracle.com/javase/specs/jvms/se8/html/jvms-4.html#jvms-4.4.5
         // 这就是个数的特殊情况，读到long和double时，必须下一个元素是个空，以兼容老版本
         // 这是由于一个byte占常量池2个位置
-        if (rs->infos[i]->tag == CONSTANT_Long || (rs->infos[i]->tag = CONSTANT_Double))
+        if (rs->infos[i]->tag == CONSTANT_Long || (rs->infos[i]->tag == CONSTANT_Double))
         {
             ++i;
             continue;
@@ -230,6 +264,8 @@ CP *readConstantPool(ClassReader *r)
 ```
 
 常量池里存着各种类型的信息，但最多的也就两个属性，所以这里就用两个`void*`指针表示了。常量信息使用`tag`表示属性类型，有14种类型。
+
+> constant_pool.h
 
 ``` c
 #define CONSTANT_Class 7
@@ -249,8 +285,10 @@ CP *readConstantPool(ClassReader *r)
 ```
 根据不同的类型，我们需要不同的方式，列举一部分。
 
+> constant_pool.h
+
 ``` c
-CPInfo *readConstantInfo(ClassReader *r, CP *cp)
+static CPInfo *readConstantInfo(ClassReader *r, CP *cp)
 {
     CPInfo *rs = (CPInfo *)malloc(sizeof(struct CPInfo));
     uint8_t tag = rs->tag = readUint8(r);
@@ -282,6 +320,8 @@ CPInfo *readConstantInfo(ClassReader *r, CP *cp)
 
 ### 方法和属性签名
 方法和属性签名带的几个属性是相同的，所以都用同一个结构体表示了。
+
+> member_info.h
 
 ``` c
 typedef struct MemberInfo
@@ -317,6 +357,8 @@ Object m(int i, double d, Thread t) {...}
 ### 属性表
 我们使用一个简单的结构体来表示属性表
 
+> attribute_info.h
+
 ``` c
 typedef struct AttributeInfo
 {
@@ -330,11 +372,13 @@ typedef struct AttributeInfo
 typedef struct AttributeInfos
 {
     uint32_t size;
-    AttributeInfo *infos;
+    AttributeInfo **infos;
 } AttributeInfos;
 ```
 
 和常量池信息类似，属性表中的信息也有多种类型，类型很多，我们就不一一解析了，仅解析我们需要用到的几个。
+
+> attribute_info.h
 
 ``` c
 typedef struct ExceptionTableEntry
@@ -349,6 +393,12 @@ typedef struct ExceptionTableEntry
     uint16_t catchType;
 } ExceptionTableEntry;
 
+typedef struct ExceptionTable
+{
+    uint32_t size;
+    ExceptionTableEntry **entrys;
+} ExceptionTable;
+
 /*
  * 实际的代码（指令）存储在属性表中
  */
@@ -358,12 +408,10 @@ typedef struct AttrCode
     uint16_t maxLocals;
     uint32_t codeLen;
     char *code;
-    // 异常表entry长度
-    uint32_t eteLen;
-    ExceptionTableEntry *exceptionEntrys;
-    uint32_t attrLen;
-    AttributeInfo *attributes;
+    ExceptionTable *exceptionTable;
+    AttributeInfos *attributes;
 } AttrCode;
+
 
 // Deprecated过期、内部生成字段等标记位
 typedef struct MarkerAttribute
@@ -427,7 +475,8 @@ typedef struct MethodParameter
 // JDK8以后可以指定编译器保留形参的名称
 typedef struct MethodParameters
 {
-    MethodParameter *parameters;
+    uint8_t len;
+    MethodParameter **parameters;
 } MethodParameters;
 
 // 从哪编译而来
@@ -451,22 +500,38 @@ typedef struct UnparsedAttribute
 
 同样的，我们也是按照类型逐个解析这些属性表
 
+> attribute_info.h
+
 ```
-AttributeInfo *readAttribute(ClassReader *r, CP *cp)
+static AttributeInfo *readAttribute(ClassReader *r, CP *cp)
 {
     uint16_t attrNameIndex = readUint16(r);
-    u_int32_t attrNameLen;
-    char *attrName = getUtf8(cp, attrNameIndex, &attrNameLen);
+    char *attrName = getUtf8(cp, attrNameIndex);
     u_int32_t attrLen = readUint32(r);
     struct AttributeInfo *rs = (AttributeInfo *)malloc(sizeof(struct AttributeInfo));
     rs->cp = cp;
-
     if (strcmp(attrName, "Code") == 0)
     {
         struct AttrCode *attr = (AttrCode *)malloc(sizeof(struct AttrCode));
         attr->maxStack = readUint16(r);
         attr->maxLocals = readUint16(r);
         attr->codeLen = readUint32(r);
+        attr->code = readBytes(r, attr->codeLen);
+
+        uint16_t exceptionTableLength = readUint16(r);
+        ExceptionTable *exceptionTable = malloc(sizeof(ExceptionTable));
+        exceptionTable->size = exceptionTableLength;
+        exceptionTable->entrys = malloc(sizeof(ExceptionTableEntry *) * exceptionTableLength);
+
+        for (int i = 0; i < exceptionTableLength; i++)
+        {
+            exceptionTable->entrys[i] = malloc(sizeof(ExceptionTableEntry));
+            exceptionTable->entrys[i]->startPc = readUint16(r);
+            exceptionTable->entrys[i]->endPc = readUint16(r);
+            exceptionTable->entrys[i]->handlerPc = readUint16(r);
+            exceptionTable->entrys[i]->catchType = readUint16(r);
+        }
+        attr->attributes = readAttributes(r, cp);
         rs->info = attr;
     }
     else if (strcmp(attrName, "ConstantValue") == 0)
@@ -475,7 +540,16 @@ AttributeInfo *readAttribute(ClassReader *r, CP *cp)
         attr->constantValueIndex = readUint16(r);
         rs->info = attr;
     }
+    
     ...其他类型的解析
+    
+    else
+    {
+        struct UnparsedAttribute *attr = (UnparsedAttribute *)malloc(sizeof(struct UnparsedAttribute));
+        attr->name = attrName;
+        attr->infoLen = attrLen;
+        attr->info = readBytes(r, attrLen);
+    }
 }
 ```
 
