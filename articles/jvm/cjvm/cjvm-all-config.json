@@ -11,5 +11,18 @@
     "creationDate": "2018-11-15 00:00:00",
     "modificationDate": "2018-11-15 00:00:00",
     "displayOrder": 100
+  },
+  {
+    "name": "cjvm-2",
+    "type": 10,
+    "title": "自己动手写JVM-运行时数据区",
+    "tags": "runtime custom-jvm c",
+    "summary": "之前我们已经将class字节流解析为`ClassFile`结构体，为了能够运行Java程序，我们还需要构建一块内存区域，用来存放运行时用到的符号、指令、数据等信息，这个区域在虚拟机规范中称为运行时数据区。",
+    "coverImage": "",
+    "groupName": "jvm",
+    "creator": "charpty",
+    "creationDate": "2018-12-8 00:00:00",
+    "modificationDate": "2018-12-8 00:00:00",
+    "displayOrder": 100
   }
 ]
