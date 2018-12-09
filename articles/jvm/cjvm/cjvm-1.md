@@ -1,5 +1,5 @@
 > 笔者博客地址：https://charpty.com       
-> 本文代码（章节名即分支名）委托在：https://github.com/charpty/cjvm
+> 本文代码委托在：https://github.com/charpty/cjvm
 
 许多同学看了不少关于JVM和GC相关的书，很多概念都熟悉了，但本着经历过才能身入其境的原则，我觉得必须要自己写一写，体会下前人的思想和辛苦，才能对所学JVM和GC相关知识进行实践性总结。
 
