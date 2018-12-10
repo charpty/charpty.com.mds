@@ -6,20 +6,21 @@
 业余时间的乐趣型项目，使用C语言实现的一个可高效运行的Java虚拟机，包括解释执行实现和CS|IP方式实现。使用C99编写，仅在类unix系统上运行，包含类加载子系统、执行子系统（常用字节码指令实现）、运行时数据区、GC、JIT等组件的实现。最终的目标是能够使用该虚拟机运行笔者网站的Java代码。
 
 ## 01-搜索class文件
+
 这基本上就是一个简单的文件搜索并读取的操作，代码也比较好理解，只是有几个注意事项：
 
 * 要遵循规范中ClassLoader的**双亲委托模型**，总是尝试在父ClassLoader中找寻文件
 * 要加载的不仅仅是直接的class文件，还有压缩在jar包、war包中的class文件
 
-
 ### 双亲委托加载方式
+
 在虚拟机中有3种类加载器，分别是：`BootstrpLoader`、`ExtClassLoader`、`AppClassLoader`。  
 
 对应的我们称被这3个类加载器加载的class文件路径为：`bootStrapPath`、`extPath`、`userPath `，其中AppClassLoader也称为SystemClassLoader，它用于加载系统（用户的项目）里的class文件，所以称这些class的路径为userPath更加形象。
 
-> classpath.c
+> classpath.h|c
 
-``` c
+```c
 typedef struct ClassPath
 {
     char *bootStrapPath;
@@ -46,7 +47,7 @@ jar包本质上就是zip压缩包，所以我们使用[libzip](https://libzip.or
 
 > classpath.c
 
-``` c
+```c
 SClass *readClassInJar(char *jarPath, char *classname)
 {
     int err;
@@ -79,14 +80,15 @@ SClass *readClassInJar(char *jarPath, char *classname)
 ```
 
 ## 02-解析class文件的内容
+
 这里也就是将class文件的里的字节内容，解析成语言可识别的数据结构，这里我们将其解析成称为`ClassFile`的结构体。`ClassFile`将单个字节码文件的内容解析成C语言的结构体，方便后续能够被`ClassLoader`加载为`Class`结构体。
 
 仅看第一层内容，`ClassFile`并不复杂。
 
 > classfile.c
 
-``` c
-// 属性命名和oracle虚拟机规范尽量保持一直(规范中属性名都使用下划线，但结构体我习惯用驼峰形式)
+```c
+// 属性命名和oracle虚拟机规范尽量保持一致(规范中属性名都使用下划线，但结构体我习惯用驼峰形式)
 // https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html
 ClassFile *readAsClassFile(ClassReader *r)
 {
@@ -122,7 +124,7 @@ ClassFile *readAsClassFile(ClassReader *r)
 
 > classreader.h
 
-``` c
+```c
 typedef struct ClassReader
 {
     // 逐个字节读下去
@@ -138,14 +140,13 @@ static uint32_t readUint32(ClassReader *r);
 static uint64_t readUint64(ClassReader *r);
 static uint16_t *readUint16s(ClassReader *r, u_int16_t *size);
 static char *readBytes(ClassReader *r, u_int32_t n);
-
 ```
 
 可以看出，同时对应该结构体也准备了一系列读取方法，几个典型实现如下：
 
 > classreader.h
 
-``` c
+```c
 static uint16_t readUint16(ClassReader *r)
 {
     return (uint16_t)r->data[r->position++] << 8 | (uint16_t)r->data[r->position++];
@@ -178,7 +179,7 @@ static uint16_t *readUint16s(ClassReader *r, u_int16_t *size)
 
 > classfile.c
 
-``` c
+```c
 ClassFile *readAsClassFile(ClassReader *r)
 {
     ClassFile *rs = (ClassFile *)malloc(sizeof(struct ClassFile));
@@ -211,13 +212,13 @@ ClassFile *readAsClassFile(ClassReader *r)
 
 接下来比较复杂的就是常量池、方法和属性签名、属性表这3个了。
 
-
 ### Class中的常量池
+
 当前这个常量池和后面运行时数据区的常量池不同，它仅是当前这个class文件里使用的。
 
 > constant_pool.h
 
-``` c
+```c
 typedef struct CPInfo
 { 
     uint8_t tag;
@@ -238,7 +239,7 @@ typedef struct CP
 
 > constant_pool.h
 
-``` c
+```c
 static CP *readConstantPool(ClassReader *r)
 {
     CP *rs = (CP *)malloc(sizeof(struct CP));
@@ -267,7 +268,7 @@ static CP *readConstantPool(ClassReader *r)
 
 > constant_pool.h
 
-``` c
+```c
 #define CONSTANT_Class 7
 #define CONSTANT_Fieldref 9
 #define CONSTANT_Methodref 10
@@ -283,11 +284,12 @@ static CP *readConstantPool(ClassReader *r)
 #define CONSTANT_MethodType 16
 #define CONSTANT_InvokeDynamic 18
 ```
+
 根据不同的类型，我们需要不同的方式，列举一部分。
 
 > constant_pool.h
 
-``` c
+```c
 static CPInfo *readConstantInfo(ClassReader *r, CP *cp)
 {
     CPInfo *rs = (CPInfo *)malloc(sizeof(struct CPInfo));
@@ -319,11 +321,12 @@ static CPInfo *readConstantInfo(ClassReader *r, CP *cp)
 ```
 
 ### 方法和属性签名
+
 方法和属性签名带的几个属性是相同的，所以都用同一个结构体表示了。
 
 > member_info.h
 
-``` c
+```c
 typedef struct MemberInfo
 {
     // 访问控制符，是否静态，是否公开等
@@ -345,6 +348,7 @@ typedef struct MemberInfo
 ```
 (IDLjava/lang/Thread;)Ljava/lang/Object;
 ```
+
 实际就是方法
 
 ```
@@ -353,13 +357,13 @@ Object m(int i, double d, Thread t) {...}
 
 那么方法中的具体实现代码存在哪里呢？答案是属性表中，属性表可以说是最复杂多样的一个结构了，基本上什么都有。
 
-
 ### 属性表
+
 我们使用一个简单的结构体来表示属性表
 
 > attribute_info.h
 
-``` c
+```c
 typedef struct AttributeInfo
 {
     // 保留文件常量池的指针，后续不用每次传递了
@@ -380,7 +384,7 @@ typedef struct AttributeInfos
 
 > attribute_info.h
 
-``` c
+```c
 typedef struct ExceptionTableEntry
 {
     // PC计数器起，可以理解为代码起，包括
@@ -494,8 +498,8 @@ typedef struct UnparsedAttribute
     uint32_t infoLen;
     char *info;
 } UnparsedAttribute;
-
 ```
+
 只展示了一部分解析后的结构体，对于我们不想解析的或者后续再解析的，我们统一使用```UnparsedAttribute```表示。
 
 同样的，我们也是按照类型逐个解析这些属性表
@@ -540,9 +544,9 @@ static AttributeInfo *readAttribute(ClassReader *r, CP *cp)
         attr->constantValueIndex = readUint16(r);
         rs->info = attr;
     }
-    
+
     ...其他类型的解析
-    
+
     else
     {
         struct UnparsedAttribute *attr = (UnparsedAttribute *)malloc(sizeof(struct UnparsedAttribute));

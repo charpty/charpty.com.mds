@@ -7,6 +7,7 @@ import json
 import utils
 import datetime
 import ntpath
+import subprocess
 
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -37,6 +38,12 @@ def clean_suffix(file_name):
 
 def get_file_name(path):
     return ntpath.basename(path)
+
+
+def write_to_clipboard(output):
+    process = subprocess.Popen(
+        'pbcopy', env={'LANG': 'en_US.UTF-8'}, stdin=subprocess.PIPE)
+    process.communicate(output.encode('utf-8'))
 
 
 def get_files_dict(root_dir="articles"):
@@ -229,26 +236,29 @@ def print_generated_info(files_dict, configs_dict, generated_articles, md_files)
         print "  " + info
 
 
-def print_result_sql(sql_list):
-    count = 1
-    for s in sql_list:
-        count = count + 1
-        if count % 2 == 0:
+def output_result_sql(sql_list):
+    size = len(sql_list)
+    to_clipboard = ""
+    last_index = size - 2
+    for i in range(size):
+        if i % 2 == 0:
             print
-        print s
+        if i >= last_index:
+            to_clipboard = to_clipboard + '\n' + sql_list[i]
+        print sql_list[i]
+    write_to_clipboard(to_clipboard)
 
 
 def main():
     files_dict = get_files_dict()
     configs_dict = get_configs_dict(files_dict)
     sql_list, modification_dates, generated_articles, md_files = generate_sql_list(files_dict, configs_dict)
-    # generated_articles = sort_articles(sort_articles, modification_dates)
     print_generated_info(files_dict, configs_dict, generated_articles, md_files)
     print("############################################################################################")
     print("*************************************RESULT SQL*********************************************")
     print("############################################################################################")
     print
-    print_result_sql(sql_list)
+    output_result_sql(sql_list)
 
 
 if __name__ == '__main__':
