@@ -2,19 +2,11 @@
 
 
 
-JMX相关的东西很多，无法一一叙述，本文涉及的有
-
-```bash
-JMX基本使用 -> 特殊场景使用JMX -> JMX中各种监控参数解释 -> 定制JMX Server与MBean
-```
-
-定位问题时，单单查看JVM相关的状态是远远不够的，网络IO与负载、数据库、Linux系统性能、各种中间件等等方面都是需要综合考量的。
-
 ## 使用JMX监控JVM
 
-JMX全称是Java管理扩展（Java Management Extensions），是Java SE平台的一部分。说白了，JMX是一个很强大的管理Java应用管理工具，可以在Java程序运行时动态监控和管理Java应用，当然JMX的功能远不止于此。本文主要关心的是JMX能够帮助我们在实战中定位问题的一些功能。
+JMX全称是Java管理扩展（Java Management Extensions），是Java SE平台的一部分。说白了，JMX是一个很强大的管理Java应用管理工具，可以在Java程序运行时动态监控和管理Java应用，当然JMX的功能远不止于此。我们这里主要关心的是JMX能够帮助我们在实战中定位问题的一些功能。
 
-JMX提供了3种方式来管理Java应用，分别是网页形式管理，SNMP管理，以及通过RMI管理，我们这一阶段要关心的是通过RMI连接器来监控JVM。
+JMX提供了3种能力来管理Java应用，分别是网页形式管理，SNMP管理，以及通过RMI管理，我们这一阶段要关心的是通过RMI连接器来监控JVM。
 
 想监控JVM，所以我们先得开启JMX代理，我们通过在Java运行时配置以下参数开启JMX Agent
 
@@ -83,7 +75,7 @@ jvisualvm -J-DsocksProxyHost=localhost -J-DsocksProxyPort=1080 -J-DsocksNonProxy
 service:jmx:rmi:///jndi/rmi://127.0.0.1:30301/jmxrmi
 ```
 
-#### 服务器未进行任何配置
+#### 服务器啥也没配
 
 虽然你可以做规范，可以定期检查，但是总会有同学对你说“就不、就不、就不”，这个时候你千万要忍住别和他打起来，即使没有刁难的同学，你也会遇到X总的服务器、之前内网的Weblogic服务器、另一个部门自己配的服务器等等情况，总之，各种各样的原因导致你拿到的是一台裸机，甚至连jdk/bin都没有，这种现象是屡见不鲜的。
 
@@ -101,7 +93,7 @@ jcmd Java应用进程ID ManagementAgent.start jmxremote.port=30301 jmxremote.ssl
 
 
 
-这里有一个比较大的坑，就是RMI监控的host，也就是之前的配置项
+这里有一个有一个比较大的坑，就是RMI监控的host，也就是之前的配置项
 
 ```java
 -Djava.rmi.server.hostname=localhost
@@ -456,6 +448,6 @@ jmxConnectorServer = JMXConnectorServerFactory.newJMXConnectorServer(jmxServiceU
 
 
 
-#### TProfile
+#### TPROFILE
 
-这里专门提一下TProfile，在查找性能问题，特别是压测后，绝望的看到一大堆不能秒级响应的复杂接口，到底这几千行的业务代码里慢在哪里，此时可以使用一下JVM Profiling的工具，TProfile是比较简单易用的。
+这里专门提一下TPROFILE，在查找性能问题，特别是压测后，绝望的看到一大堆不能秒级响应的复杂接口，到底这几千行的业务代码里慢在哪里，此时可以使用一下JVM Profiling的工具，TPROFILE是比较简单易用的。

@@ -1,0 +1,15 @@
+[
+  {
+    "name": "jvm-montool-usage",
+    "type": 10,
+    "title": "利用JMX定位线上问题",
+    "tags": "jmx jvm rmi",
+    "summary": "JMX全称是Java管理扩展（Java Management Extensions），是Java SE平台的一部分。说白了，JMX是一个很强大的管理Java应用管理工具，可以在Java程序运行时动态监控和管理Java应用",
+    "coverImage": "",
+    "groupName": "jvm",
+    "creator": "charpty",
+    "creationDate": "2018-12-15 00:00:00",
+    "modificationDate": "2018-12-15 00:00:00",
+    "displayOrder": 100
+  }
+]
