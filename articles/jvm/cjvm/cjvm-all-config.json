@@ -24,5 +24,18 @@
     "creationDate": "2018-12-8 00:00:00",
     "modificationDate": "2018-12-8 00:00:00",
     "displayOrder": 100
+  },
+  {
+    "name": "cjvm-3",
+    "type": 10,
+    "title": "自己动手写JVM-指令集",
+    "tags": "instruction custom-jvm c",
+    "summary": "",
+    "coverImage": "",
+    "groupName": "jvm",
+    "creator": "charpty",
+    "creationDate": "2018-12-22 00:00:00",
+    "modificationDate": "2018-12-22 00:00:00",
+    "displayOrder": 100
   }
 ]
