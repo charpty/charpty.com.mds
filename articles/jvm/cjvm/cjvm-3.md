@@ -17,6 +17,8 @@ class文件解析 -> 运行时数据区 -> 指令集 -> JNI -> 内存管理与GC
 
 其中`class文件解析`和`运行时数据区`和在之前已经写过，但是笔者在写后面文章时也发现了之前思路的一些问题，为了保留思路样本，就不直接修改原来的文章了，而是出“修订版”，比如对于文章`cjvm-1.md`，则其修订版本为`cjvm-1-m1.md`、`cjvm-1-m2.md`等，在修订版本前面说明修订的内容。
 
+这也是必须的，因为实现总是由难到易，比如oop-klass模型，需等到实现GC时才涉及，这时就需要回头去改部分运行时数据区的代码。
+
 
 
 ## 指令集概述
@@ -137,6 +139,7 @@ void insm_7(Frame *frame, ByteCodeStream *stream)
 {
     // ICONST_4
     pushInt(frame->operandStack, 4);
+    UPDATE_PC_AND_CONTINUE
 }
 ```
 
@@ -149,6 +152,7 @@ void insm_9(Frame *frame, ByteCodeStream *stream)
 {
     // LCONST_0
     pushLong(frame->operandStack, 0);
+    UPDATE_PC_AND_CONTINUE
 }
 ```
 
@@ -170,38 +174,354 @@ void insm_16(Frame *frame, ByteCodeStream *stream)
     // BIPUSH
     int x = nextInt8(stream);
     pushDouble(frame->operandStack, x);
-    frame->nextPC = stream->pc;
+    UPDATE_PC_AND_CONTINUE
 }
 ```
 
 之所以说`BITPUSH`比`ICONST_5` 耗性能，是因为`BITPUSH`需要去取一次操作数，`BITPUSH`的操作数的长度是8位，取道之后将其推入操作数栈，这样的话可以将任意`-128 ~ 127`的数字推入操作数栈。`SITPUSH`实现也是一样，推入值范围是带符号的`short`类型范围。
 
+每次读取操作码和获取操作数之后，下一次待执行的代码位置都已发生变化，所以都需要设置下一个PC的位置。一般情况下，下一个PC的位置也就是当前读取完操作数之后的指针位置，所以我们做一个简单的宏来设置下一个PC。
+
+```c
+#define UPDATE_PC_AND_CONTINUE frame->nextPC = stream->pc;
+```
 
 
-较为复杂的就是`LDC`指令了，它是将常量池中信息推入到操作数栈中。
 
-// TODO
+较为复杂的就是`LDC`指令了，它是将常量池中信息推入到操作数栈中。`LDC`指令共有3条
+
+```c
+LDC     将int、float、String、类引用、方法引用等类型常量值从常量池中推送至栈顶
+LDC_W   将int、float、String、类引用、方法引用等类型常量值从常量池中推送至栈顶（宽索引）
+LDC2_W  将long或double型常量值从常量池中推送至栈顶（宽索引）
+```
+
+我们仅讨论`LDC`即可，`LDC_W`和`LDC`类似，差别在于使用了16位的常量池索引，它们都只能用于操作单精读数据，而`LDC2_W`则用于操作double和long类型。
+
+
+
+LDC的实现逻辑也比较简单，首先从常量池获取索引对应常量
+
+* 如果常量是int或者float类型，则直接推入操作数栈
+
+* 如果常量是字符串引用，则找到该字符串对应的对象引用推入操作数栈
+
+* 如果常量是类引用，则load该class被将其推入操作数栈
+
+* 否则那就是方法类型MethodType或者方法句柄MethodHandler，它们的解析非常复杂，后面版本再完善
+
+
+
+按照这个逻辑我们进行实现
+
+> ins_constant.h
+
+```c
+void insm_18(Frame *frame, ByteCodeStream *stream)
+{
+    // LDC
+    uint8_t index = nextUint8(stream);
+    RCP *rcp = frame->method->clazz->constantPool;
+    RCPInfo *rcpInfo = getRCPInfo(rcp, (uint32_t)index);
+
+    if (rcpInfo->type == CONSTANT_Integer)
+    {
+        pushInt(frame->operandStack, *(int32_t *)rcpInfo->data);
+    }
+    else if (rcpInfo->type == CONSTANT_Float)
+    {
+        pushFloat(frame->operandStack, *(float *)rcpInfo->data);
+    }
+    else if (rcpInfo->type == CONSTANT_String)
+    {
+        InstanceOOP *oop = resloveStringReference(frame->method->clazz, (char *)rcpInfo->data);
+        pushRef(frame->operandStack, oop);
+    }
+    else if (rcpInfo->type == CONSTANT_Class)
+    {
+        IMKlass *imkclass = resloveClassReference(frame->method->clazz, (char *)rcpInfo->data);
+        pushRef(frame->operandStack, imkclass);
+    }
+    else
+    {
+        // Method Type | Method Handler
+        // TODO
+    }
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+
 
 ## 加载指令
 
-加载指令的作用是将本地变量表的数据加载
+加载指令的作用是将本地变量表的数据加载到操作数栈中，这部分指令比较直白。
+
+
+
+把本地变量中第一个位置的int类型数值推入操作数栈中
+
+```c
+void insm_26(Frame *frame, ByteCodeStream *stream)
+{
+    // ILOAD_0
+    pushInt(frame->operandStack, getInt(frame->localVars, 0));
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+当然还有将long、float、double等类型推入栈顶，都是类似的
+
+
+
+也可以将指定下标的元素推入操作数栈，比如将指定下标的long类型推入操作数栈
+
+```c
+void insm_22(Frame *frame, ByteCodeStream *stream)
+{
+    // LLOAD
+    pushLong(frame->operandStack, getLong(frame->localVars, nextInt8(stream)));
+    UPDATE_PC_AND_CONTINUE
+}
+
+```
+
+除了推入基础类型，还可以将指定数组中的元素推入操作数栈，比如将Boolean类型数组中的某个元素推入操作数栈
+
+```c
+void insm_51(Frame *frame, ByteCodeStream *stream)
+{
+    // BALOAD
+    int32_t index = popInt(frame->operandStack);
+    int8_t *arrRef = (int8_t *)popRef(frame->operandStack);
+    pushInt(frame->operandStack, (int32_t)arrRef[index]);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+在`BALOAD`实现中我可以看到，并没有取操作码后面的操作数，而是从操作数栈中弹出元素的下标和数组引用。
 
 
 
 ## 存储指令
 
+加载指令的作用是将本地变量表中的数据加载到操作数栈，而存储指令的作用则恰恰相反。
+
+
+
+仅举一个例子，将float类型的数据从操作数栈中弹出并存储到本地变量表指定位置中
+
+```c
+void insm_56(Frame *frame, ByteCodeStream *stream)
+{
+    // FSTORE
+    setFloat(frame->localVars, nextInt8(stream), popFloat(frame->operandStack));
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+
+
 ## 栈指令
+
+大多数操作都是围绕操作数栈的，所以少不了对操作数栈的各种操作，总共有9个指令，都是对标准栈的常见操作。
+
+
+
+最基本的弹出
+
+```c
+void insm_87(Frame *frame, ByteCodeStream *stream)
+{
+    // POP
+    popVar(frame->operandStack);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+一次弹出两个
+
+```c
+void insm_88(Frame *frame, ByteCodeStream *stream)
+{
+    // POP2
+    popVar(frame->operandStack);
+    popVar(frame->operandStack);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+复制栈顶元素
+
+```c
+void insm_89(Frame *frame, ByteCodeStream *stream)
+{
+    // DUP
+    union Slot *x = popVar(frame->operandStack);
+    pushVar(frame->operandStack, x);
+    pushVar(frame->operandStack, x);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+复制两个
+
+```c
+void insm_92(Frame *frame, ByteCodeStream *stream)
+{
+    // DUP2
+    union Slot *x1 = popVar(frame->operandStack);
+    union Slot *x2 = popVar(frame->operandStack);
+
+    pushVar(frame->operandStack, x2);
+    pushVar(frame->operandStack, x1);
+    pushVar(frame->operandStack, x2);
+    pushVar(frame->operandStack, x1);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+交换栈顶元素
+
+```c
+void insm_95(Frame *frame, ByteCodeStream *stream)
+{
+    // SWAP
+    union Slot *x1 = popVar(frame->operandStack);
+    union Slot *x2 = popVar(frame->operandStack);
+
+    pushVar(frame->operandStack, x1);
+    pushVar(frame->operandStack, x2);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+当然还有稍微麻烦点的，比如复制栈顶值并将其插入栈顶第二个位置下面
+
+```c
+void insm_90(Frame *frame, ByteCodeStream *stream)
+{
+    // DUP_X1
+    union Slot *x1 = popVar(frame->operandStack);
+    union Slot *x2 = popVar(frame->operandStack);
+
+    pushVar(frame->operandStack, x1);
+    pushVar(frame->operandStack, x2);
+    pushVar(frame->operandStack, x1);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+另外还有组合变种`DUP2_X1`、`DUP2_X2`，道理都一样。
+
+
 
 ## 数学指令
 
+数学指令就是进行各种数学运算，加减乘除、位运算、取模、取负等。和硬件CPU只能对寄存器进行操作类似，数学指令也只能对操作数栈中的数据进行运算，并只能将结果写入操作数栈。
+
+
+
+将栈顶两个int类型数相加，并将结果存入操作数栈
+
+```c
+void insm_96(Frame *frame, ByteCodeStream *stream)
+{
+    // IADD
+    int32_t x1 = popInt(frame->operandStack);
+    int32_t x2 = popInt(frame->operandStack);
+    pushInt(frame->operandStack, (x1 + x2));
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+其它还有long、float、double等类型的相加。
+
+再比如乘法，将两个long类型数值相乘
+
+```c
+void insm_105(Frame *frame, ByteCodeStream *stream)
+{
+    // LMUL
+    int64_t x1 = popLong(frame->operandStack);
+    int64_t x2 = popLong(frame->operandStack);
+    pushLong(frame->operandStack, (x1 * x2));
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+除了普通的加减乘除，还有常用的取负和取模，其实不管什么操作，解释器执行都是先从操作数栈中取出数据，然后利用C的语言执行运算，最后再将结果推入操作数栈中。
+
+最后再看下位运算操作，比如两个int按位与
+
+```c
+void insm_126(Frame *frame, ByteCodeStream *stream)
+{
+    // LMUL
+    int32_t x1 = popInt(frame->operandStack);
+    int32_t x2 = popInt(frame->operandStack);
+    pushInt(frame->operandStack, (x1 & x2));
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+还有各种类型的异或与位移操作，最后比较特殊的是无符号右移，也就是Java支持的`>>>`符号，我们通过先将其转换为无符号再右移来实现。
+
+```c
+void insm_125(Frame *frame, ByteCodeStream *stream)
+{
+    // LUSHR
+    uint32_t offset = (uint32_t)popInt(frame->operandStack);
+    int64_t x = popLong(frame->operandStack);
+    pushInt(frame->operandStack, ((u_int64_t)x) >> offset);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+
+
 ## 转换指令
 
+JVM标准提供了15条转换指令
+
+
+
+将int类型转换为byte并将结果推入栈顶
+
+```c
+void insm_133(Frame *frame, ByteCodeStream *stream)
+{
+    // I2L
+    int32_t x = popInt(frame->operandStack);
+    pushLong(frame->operandStack, (int64_t)x);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+将double转换为long
+
+```c
+void insm_143(Frame *frame, ByteCodeStream *stream)
+{
+    // D2L
+    double x = popDouble(frame->operandStack);
+    pushLong(frame->operandStack, (int64_t)x);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+其它13条都是类似的
+
+
+
 ## 比较指令
+
+
+
+
 
 ## 控制指令
 
 ## 引用指令
 
 ## 扩展指令
-
-## 执行引擎
