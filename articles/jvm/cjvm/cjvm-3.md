@@ -47,7 +47,9 @@ class文件解析 -> 运行时数据区 -> 指令集 -> JNI -> 内存管理与GC
 
 - 保留指令：仅关心调试指令即可
 
-Java虚拟机规范一共规定了205条指令，其中3条是保留指令，在实际运行期间共有202条指令，通过仅仅200多条指令，就能模拟大多数汇编指令做的事情，简单又强大！
+Java虚拟机规范一共规定了205条指令，其中3条是保留指令，在实际运行期间共有202条指令，通过仅仅200多条指令，就能模拟大多数汇编指令做的事情，简单又强大！如何将代码有效的编译成一个个的指令则是编译器的事情，后续我们再分析。
+
+我们不讨论扩展和保留指令，在目前用不着。
 
 
 
@@ -239,8 +241,8 @@ void insm_18(Frame *frame, ByteCodeStream *stream)
     }
     else if (rcpInfo->type == CONSTANT_Class)
     {
-        IMKlass *imkclass = resloveClassReference(frame->method->clazz, (char *)rcpInfo->data);
-        pushRef(frame->operandStack, imkclass);
+        IKlass *clazz = resloveClassReference(frame->method->clazz, (char *)rcpInfo->data);
+        pushRef(frame->operandStack, getInstaceMirroClass(clazz));
     }
     else
     {
@@ -516,12 +518,396 @@ void insm_143(Frame *frame, ByteCodeStream *stream)
 
 ## 比较指令
 
+比较指令包含两个功能
 
+* 比较两个值，并将结果推入操作数栈
+
+* 比较两个值，当结果符合预期时进行跳转
+
+前者就是常见比较了
+
+```java
+boolean isDone = time > 500
+```
+
+后者就是`if`、`for`、`while`等条件型跳转了（还得结合控制指令），这是实现循环和条件控制的关键。
+
+
+
+先看简单的比较，比较两个long类型数值并将结果压入操作数栈中。
+
+```c
+void insm_148(Frame *frame, ByteCodeStream *stream)
+{
+    // LCMP
+    long v2 = popLong(frame->operandStack);
+    long v1 = popLong(frame->operandStack);
+    pushInt(frame->operandStack, v1 > v2 ? 1 : (v1 == v2 ? 0 : -1));
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+容易理解，使用0表示相等，1表示第一个值更大，-1表示第二个值更大。
+
+对于浮点型数据，则还存在数值为`NaN`的情况，此时不同指令处理结果不相同，`DCMPL`表示在有double类型数值为`NaN`时压入结果-1，而对应的`DCMPG`则代表有double类型数值为`NaN`时压入1。
+
+```c
+void insm_151(Frame *frame, ByteCodeStream *stream)
+{
+    // DCMPL
+    double v2 = popFloat(frame->operandStack);
+    double v1 = popFloat(frame->operandStack);
+    pushInt(frame->operandStack, v1 > v2 ? 1 : (v1 == v2 ? 0 : -1));
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+这里没有出现判断NaN情况，其实是简化了，相当于代码
+
+```c
+pushInt(frame->operandStack, v1 > v2 ? 1 : (v1 == v2 ? 0 : -1));
+```
+
+或者
+
+```c
+if (v1 > v2)
+{
+    pushInt(frame->operandStack, 1);
+}
+else if (v1 == v2)
+{
+    pushInt(frame->operandStack, 0);
+}
+else if (v1 < v2)
+{
+    pushInt(frame->operandStack, -1);
+}
+else
+{
+    // 数值为NaN的情况
+    pushInt(frame->operandStack, -1);
+}
+```
+
+对应的，`DCMPG`的代码为
+
+```c
+void insm_152(Frame *frame, ByteCodeStream *stream)
+{
+    // DCMPG
+    float v2 = popFloat(frame->operandStack);
+    float v1 = popFloat(frame->operandStack);
+    pushInt(frame->operandStack, v1 < v2 ? -1 : (v1 == v2 ? 0 : 1));
+    UPDATE_PC_AND_CONTINUE
+}
+
+```
+
+
+
+条件跳转也是类似的，只不过不是将结果压入操作数栈，而是跳转到指定位置
+
+比如，比较栈顶两个int的值，如果相等则跳转
+
+```c
+void insm_159(Frame *frame, ByteCodeStream *stream)
+{
+    // IF_ICMPEQ
+    int32_t v2 = popInt(frame->operandStack);
+    int32_t v1 = popInt(frame->operandStack);
+    int32_t offset = (int32_t)nextInt16(stream);
+    if (v1 == v2)
+    {
+        frame->nextPC = frame->thread->pc + offset;
+    }
+}
+```
+
+也可以比较栈顶值与0的关系，比如栈顶值小于等于0则跳转
+
+```c
+void insm_158(Frame *frame, ByteCodeStream *stream)
+{
+    // IFLE
+    int32_t v = popInt(frame->operandStack);
+    int32_t offset = (int32_t)nextInt16(stream);
+    if (v <= 0)
+    {
+        frame->nextPC = frame->thread->pc + offset;
+    }
+}
+```
+
+除了比较基础数值，也可以比较引用是否相同。比如判断栈顶两个引用，如果不相同则跳转
+
+```c
+void insm_166(Frame *frame, ByteCodeStream *stream)
+{
+    // IF_ACMPNE
+    void *r2 = popRef(frame->operandStack);
+    void *r1 = popRef(frame->operandStack);
+    int32_t offset = (int32_t)nextInt16(stream);
+    if (r1 != r2)
+    {
+        frame->nextPC = frame->thread->pc + offset;
+    }
+}
+```
 
 
 
 ## 控制指令
 
+`JSR`和`RET`用于控制finally子句， 在新版本里已不再使用，我们也不在讨论。
+
+剩下的其实也就3种，第一种是无条件跳转`GOTO`
+
+```c
+void insm_167(Frame *frame, ByteCodeStream *stream)
+{
+    // GOTO
+    int32_t offset = (int32_t)nextInt16(stream);
+    frame->nextPC = frame->thread->pc + offset;
+}
+```
+
+第二种则是`switch`语句，有两种语句，一种是case的值是连续，一种是不连续的。
+
+连续的case值是使用`TABLESWITCH`指令
+
+```c
+skipPadding(stream);
+    // TABLESWITCH
+    int32_t defaultOffset = nextInt32(stream);
+    int32_t low = nextInt32(stream);
+    int32_t high = nextInt32(stream);
+    int32_t offsetCount = high - low + 1;
+    int32_t *offsets = nextInt32s(stream, offsetCount);
+    int32_t index = popInt(frame->operandStack);
+    int32_t offset;
+    if (index >= low && index <= high)
+    {
+        offset = offsets[index - low];
+    }
+    else
+    {
+        offset = defaultOffset;
+    }
+    frame->nextPC = frame->thread->pc + offset; 
+```
+
+`TABLESWITCH`操作码后紧跟的是0～3个字节的填充字节，需要跳过。跳转策略也很好理解，跳到哪里执行和当前index有关，如果index在`switch`第一个case和最后一个case之间则是合法的，取道其case下的代码位置进行跳转，否则跳转到默认的位置。
+
+`TABLESWITCH`的case值是连续的，用下标即可访问，而`LOOKUP_SWITCH`则是采用类似MAP的形式来存放offset的，我们使用一个数组来存储这样的关系，数组第i个值表示key，第i+1个值表示offset。
+
+```c
+void insm_171(Frame *frame, ByteCodeStream *stream)
+{
+    // LOOKUPSWITCH
+    int32_t key = popInt(frame->operandStack);
+    int32_t defaultOffset = nextInt32(stream);
+    int32_t offsetCount = nextInt32(stream);
+    int32_t *offsets = nextInt32s(stream, offsetCount);
+    for (int i = 0; i < offsetCount; i = i + 2)
+    {
+        if (offsets[i] == key)
+        {
+            int32_t offset = offsets[i + 1];
+            frame->nextPC = frame->thread->pc + offset;
+            break;
+        }
+    }
+}
+```
+
+
+
+第三种是return类型指令，都类似，就看一个返回int数值的例子
+
+```c
+void insm_172(Frame *frame, ByteCodeStream *stream)
+{
+    // IRETURN
+    JThread *thread = frame->thread;
+    Frame *currentFrame = popFrame(thread);
+    Frame *invokerFrame = topFrame(thread);
+    pushInt(invokerFrame->operandStack, popInt(currentFrame->operandStack));
+}
+```
+
+将当前的Frame弹出，并将当前的Frame栈顶的int数值压入上一个Frame的操作数栈。
+
+
+
 ## 引用指令
 
-## 扩展指令
+引用指令是最为复杂的指令集了，主要功能是对方法和对象进行操作，大致分为创建对象、对象检查、获取类的属性和方法、调用方法、对象锁、异常几种类型。
+
+
+
+首先来看创建对象，最简单的就是`NEW`指令了，它会创建一个对象，并将其引用压入操作数栈
+
+```c
+void insm_187(Frame *frame, ByteCodeStream *stream)
+{
+    // NEW
+    int16_t index = (int16_t)nextInt16(stream);
+    IKlass *clazz = frame->method->clazz;
+    char *className = ((ClassRef *)getRCPInfo(clazz->constantPool, index)->data)->classname;
+    IKlass *refClass = resloveClassReference(clazz, className);
+    if (!isClassInit(refClass))
+    {
+        initClass(refClass);
+    }
+    InstanceOOP *oop = newObject(refClass);
+    pushRef(frame->operandStack, oop);
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+
+
+获取数组长度
+
+```c
+void insm_190(Frame *frame, ByteCodeStream *stream)
+{
+    // ARRAYLENGTH
+
+    ArrayOOP *arrayRef = (ArrayOOP *)popRef(frame->operandStack);
+    if (arrayRef == NULL)
+    {
+        // java.lang.NullPointerException
+    }
+    pushInt(frame->operandStack, arrayRef->length);
+
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+
+
+获取类的某个静态属性的值
+
+```c
+void insm_178(Frame *frame, ByteCodeStream *stream)
+{
+    // GETSTATIC
+    int16_t index = nextInt16(stream);
+    IKlass *clazz = frame->method->clazz;
+    MemberRef *fieldRef = (MemberRef *)getRCPInfo(clazz->constantPool, index)->data;
+    Field *field = resloveFieldReference(fieldRef);
+    if (!isClassInit(field->clazz))
+    {
+        initClass(field->clazz);
+    }
+    char *descriptor = field->descriptor;
+    uint32_t index = field->slotIndex;
+    Slots *slots = getStaticVars(field->clazz);
+
+    char flag = descriptor[0];
+    if (flag == 'Z' || flag == 'B' || flag == 'C' || flag == 'S' || flag == 'I')
+    {
+        pushInt(frame->operandStack, getSlotInt(slots, index));
+    }
+    else if (flag == 'F')
+    {
+        pushFloat(frame->operandStack, getSlotFloat(slots, index));
+    }
+    else if (flag == 'J')
+    {
+        pushLong(frame->operandStack, getSlotLong(slots, index));
+    }
+    else if (flag == 'D')
+    {
+        pushDouble(frame->operandStack, getSlotDouble(slots, index));
+    }
+    else if (flag == 'L')
+    {
+        pushRef(frame->operandStack, getSlotRef(slots, index));
+    }
+    else
+    {
+    }
+    UPDATE_PC_AND_CONTINUE
+}
+```
+
+属性的存储顺序是固定的，每个属性只是对应下标的`Slot`而已，静态属性是直接存在类中的，所以我们通过`IKlass`的`getStaticVars`方法即可获得静态属性数组。
+
+而成员属性也是类似的，只不过是从对象中获取属性数组，对象则是从操作数栈中弹出
+
+```c
+// 对比与静态属性的：Slots *slots = getStaticVars(field->clazz);
+InstanceOOP *oop = (InstanceOOP *)popRef(frame->operandStack);
+Slots slots =  getIntanceVars(oop);
+```
+
+由于方法和属性表现是完全类似的，都是使用类名称、名称、描述符来表示一个属性或方法，所以这里就不再重复描述静态方法和实例方法的获取了。
+
+
+
+我们再来实现方法调用，分为几种
+
+JVM使用`INVOKE_SPECIAL`专门用于调用对象的构造方法
+
+```c
+void insm_183(Frame *frame, ByteCodeStream *stream)
+{
+    // INVOKESPECIAL
+    int16_t methodRefIndex = nextInt16(stream);
+    IKlass *clazz = frame->method->clazz;
+    RCP *rcp = clazz->constantPool;
+    MemberRef *methodRef = (MemberRef *)getRCPInfo(clazz->constantPool, methodRefIndex)->data;
+    Method *method = resloveMethodReference(methodRef);
+
+    if (method->name == "<init>" && clazz != method->clazz)
+    {
+        // java.lang.NoSuchMethodError
+    }
+    if (isMethodStatic(method))
+    {
+        // java.lang.IncompatibleClassChangeError
+    }
+
+    void *ref = getRefFromTop(frame->operandStack, method->argCount - 1);
+    if (ref == NULL)
+    {
+        // java.lang.NullPointerException
+    }
+
+    if (isMethodProtected(method))
+    {
+        // java.lang.IllegalAccessError
+    }
+
+    Method *methodToBeInvoked = lookupMethodInClass(clazz, method);
+
+    JThread *thread = frame->thread;
+    Frame *newFrame = thread->createFrame(thread, methodToBeInvoked);
+    pushFrame(thread, newFrame);
+
+    uint32_t argSlotCount = method->argCount;
+    if (argSlotCount > 0)
+    {
+        for (int i = argSlotCount - 1; i >= 0; i--)
+        {
+            union Slot *slot = popVar(newFrame->operandStack);
+            setVar(newFrame->localVars, (uint32_t)i, slot);
+        }
+    }
+}
+```
+
+方法的调用就是创建新的栈帧并压入线程栈中，过程涉及到参数的传递和方法的查找。
+
+之所以需要查找方法，是因为Java中允许方法多态，子类可以继承父类的方法，到底调用哪个方法需要在运行时决定。
+
+
+
+其实已经可以想见，`INVOKE_STATIC`也是和上面代码类似，只是省去了方法查找的过程，同时`INVOKE_VIRTUAL`也几乎上述代码相同，只是省去了部分判断。
+
+
+
+异常和监视器锁涉及到内存管理模型，后续再讲解。
