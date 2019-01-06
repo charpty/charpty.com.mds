@@ -31,7 +31,7 @@ class文件解析 -> 运行时数据区 -> 指令集 -> JNI -> 内存管理与GC
 
 - 存储：和加载指令对应，这是将栈顶变量写回到本地变量表中
 
-- 栈：对栈的各种操作
+- __栈：对栈的各种操作
 
 - 数学：在栈上进行加减乘除、位移、异或等数学操作
 
@@ -45,7 +45,7 @@ class文件解析 -> 运行时数据区 -> 指令集 -> JNI -> 内存管理与GC
 
 - 扩展：宽字扩展、多维数组相关指令
 
-- 保留指令：仅关心调试指令即可
+- 保留：仅关心调试指令即可
 
 Java虚拟机规范一共规定了205条指令，其中3条是保留指令，在实际运行期间共有202条指令，通过仅仅200多条指令，就能模拟大多数汇编指令做的事情，简单又强大！如何将代码有效的编译成一个个的指令则是编译器的事情，后续我们再分析。
 
@@ -263,6 +263,8 @@ void insm_18(Frame *frame, ByteCodeStream *stream)
 
 把本地变量中第一个位置的int类型数值推入操作数栈中
 
+> ins_load.h
+
 ```c
 void insm_26(Frame *frame, ByteCodeStream *stream)
 {
@@ -278,6 +280,8 @@ void insm_26(Frame *frame, ByteCodeStream *stream)
 
 也可以将指定下标的元素推入操作数栈，比如将指定下标的long类型推入操作数栈
 
+> ins_load.h
+
 ```c
 void insm_22(Frame *frame, ByteCodeStream *stream)
 {
@@ -289,6 +293,8 @@ void insm_22(Frame *frame, ByteCodeStream *stream)
 ```
 
 除了推入基础类型，还可以将指定数组中的元素推入操作数栈，比如将Boolean类型数组中的某个元素推入操作数栈
+
+> ins_load.h
 
 ```c
 void insm_51(Frame *frame, ByteCodeStream *stream)
@@ -313,6 +319,8 @@ void insm_51(Frame *frame, ByteCodeStream *stream)
 
 仅举一个例子，将float类型的数据从操作数栈中弹出并存储到本地变量表指定位置中
 
+> ins_store.h
+
 ```c
 void insm_56(Frame *frame, ByteCodeStream *stream)
 {
@@ -332,6 +340,8 @@ void insm_56(Frame *frame, ByteCodeStream *stream)
 
 最基本的弹出
 
+> ins_stack.h
+
 ```c
 void insm_87(Frame *frame, ByteCodeStream *stream)
 {
@@ -342,6 +352,8 @@ void insm_87(Frame *frame, ByteCodeStream *stream)
 ```
 
 一次弹出两个
+
+> ins_stack.h
 
 ```c
 void insm_88(Frame *frame, ByteCodeStream *stream)
@@ -355,6 +367,8 @@ void insm_88(Frame *frame, ByteCodeStream *stream)
 
 复制栈顶元素
 
+> ins_stack.h
+
 ```c
 void insm_89(Frame *frame, ByteCodeStream *stream)
 {
@@ -367,6 +381,8 @@ void insm_89(Frame *frame, ByteCodeStream *stream)
 ```
 
 复制两个
+
+> ins_stack.h
 
 ```c
 void insm_92(Frame *frame, ByteCodeStream *stream)
@@ -385,6 +401,8 @@ void insm_92(Frame *frame, ByteCodeStream *stream)
 
 交换栈顶元素
 
+> ins_stack.h
+
 ```c
 void insm_95(Frame *frame, ByteCodeStream *stream)
 {
@@ -399,6 +417,8 @@ void insm_95(Frame *frame, ByteCodeStream *stream)
 ```
 
 当然还有稍微麻烦点的，比如复制栈顶值并将其插入栈顶第二个位置下面
+
+> ins_stack.h
 
 ```c
 void insm_90(Frame *frame, ByteCodeStream *stream)
@@ -426,6 +446,8 @@ void insm_90(Frame *frame, ByteCodeStream *stream)
 
 将栈顶两个int类型数相加，并将结果存入操作数栈
 
+> ins_math.h
+
 ```c
 void insm_96(Frame *frame, ByteCodeStream *stream)
 {
@@ -440,6 +462,8 @@ void insm_96(Frame *frame, ByteCodeStream *stream)
 其它还有long、float、double等类型的相加。
 
 再比如乘法，将两个long类型数值相乘
+
+> ins_math.h
 
 ```c
 void insm_105(Frame *frame, ByteCodeStream *stream)
@@ -456,6 +480,8 @@ void insm_105(Frame *frame, ByteCodeStream *stream)
 
 最后再看下位运算操作，比如两个int按位与
 
+> ins_math.h
+
 ```c
 void insm_126(Frame *frame, ByteCodeStream *stream)
 {
@@ -468,6 +494,8 @@ void insm_126(Frame *frame, ByteCodeStream *stream)
 ```
 
 还有各种类型的异或与位移操作，最后比较特殊的是无符号右移，也就是Java支持的`>>>`符号，我们通过先将其转换为无符号再右移来实现。
+
+> ins_math.h
 
 ```c
 void insm_125(Frame *frame, ByteCodeStream *stream)
@@ -490,6 +518,8 @@ JVM标准提供了15条转换指令
 
 将int类型转换为byte并将结果推入栈顶
 
+> ins_convert.h
+
 ```c
 void insm_133(Frame *frame, ByteCodeStream *stream)
 {
@@ -501,6 +531,8 @@ void insm_133(Frame *frame, ByteCodeStream *stream)
 ```
 
 将double转换为long
+
+> ins_convert.h
 
 ```c
 void insm_143(Frame *frame, ByteCodeStream *stream)
@@ -536,6 +568,8 @@ boolean isDone = time > 500
 
 先看简单的比较，比较两个long类型数值并将结果压入操作数栈中。
 
+> ins_compare.h
+
 ```c
 void insm_148(Frame *frame, ByteCodeStream *stream)
 {
@@ -550,6 +584,8 @@ void insm_148(Frame *frame, ByteCodeStream *stream)
 容易理解，使用0表示相等，1表示第一个值更大，-1表示第二个值更大。
 
 对于浮点型数据，则还存在数值为`NaN`的情况，此时不同指令处理结果不相同，`DCMPL`表示在有double类型数值为`NaN`时压入结果-1，而对应的`DCMPG`则代表有double类型数值为`NaN`时压入1。
+
+> ins_compare.h
 
 ```c
 void insm_151(Frame *frame, ByteCodeStream *stream)
@@ -592,6 +628,8 @@ else
 
 对应的，`DCMPG`的代码为
 
+> ins_compare.h
+
 ```c
 void insm_152(Frame *frame, ByteCodeStream *stream)
 {
@@ -610,6 +648,8 @@ void insm_152(Frame *frame, ByteCodeStream *stream)
 
 比如，比较栈顶两个int的值，如果相等则跳转
 
+> ins_compare.h
+
 ```c
 void insm_159(Frame *frame, ByteCodeStream *stream)
 {
@@ -626,6 +666,8 @@ void insm_159(Frame *frame, ByteCodeStream *stream)
 
 也可以比较栈顶值与0的关系，比如栈顶值小于等于0则跳转
 
+> ins_compare.h
+
 ```c
 void insm_158(Frame *frame, ByteCodeStream *stream)
 {
@@ -640,6 +682,8 @@ void insm_158(Frame *frame, ByteCodeStream *stream)
 ```
 
 除了比较基础数值，也可以比较引用是否相同。比如判断栈顶两个引用，如果不相同则跳转
+
+> ins_compare.h
 
 ```c
 void insm_166(Frame *frame, ByteCodeStream *stream)
@@ -663,6 +707,8 @@ void insm_166(Frame *frame, ByteCodeStream *stream)
 
 剩下的其实也就3种，第一种是无条件跳转`GOTO`
 
+> ins_control.h
+
 ```c
 void insm_167(Frame *frame, ByteCodeStream *stream)
 {
@@ -676,9 +722,13 @@ void insm_167(Frame *frame, ByteCodeStream *stream)
 
 连续的case值是使用`TABLESWITCH`指令
 
+> ins_control.h
+
 ```c
-skipPadding(stream);
+void insm_170(Frame *frame, ByteCodeStream *stream)
+{
     // TABLESWITCH
+    skipPadding(stream);
     int32_t defaultOffset = nextInt32(stream);
     int32_t low = nextInt32(stream);
     int32_t high = nextInt32(stream);
@@ -694,12 +744,15 @@ skipPadding(stream);
     {
         offset = defaultOffset;
     }
-    frame->nextPC = frame->thread->pc + offset; 
+    frame->nextPC = frame->thread->pc + offset;
+} 
 ```
 
 `TABLESWITCH`操作码后紧跟的是0～3个字节的填充字节，需要跳过。跳转策略也很好理解，跳到哪里执行和当前index有关，如果index在`switch`第一个case和最后一个case之间则是合法的，取道其case下的代码位置进行跳转，否则跳转到默认的位置。
 
 `TABLESWITCH`的case值是连续的，用下标即可访问，而`LOOKUP_SWITCH`则是采用类似MAP的形式来存放offset的，我们使用一个数组来存储这样的关系，数组第i个值表示key，第i+1个值表示offset。
+
+> ins_control.h
 
 ```c
 void insm_171(Frame *frame, ByteCodeStream *stream)
@@ -725,6 +778,8 @@ void insm_171(Frame *frame, ByteCodeStream *stream)
 
 第三种是return类型指令，都类似，就看一个返回int数值的例子
 
+> ins_control.h
+
 ```c
 void insm_172(Frame *frame, ByteCodeStream *stream)
 {
@@ -748,6 +803,8 @@ void insm_172(Frame *frame, ByteCodeStream *stream)
 
 首先来看创建对象，最简单的就是`NEW`指令了，它会创建一个对象，并将其引用压入操作数栈
 
+> ins_reference.h
+
 ```c
 void insm_187(Frame *frame, ByteCodeStream *stream)
 {
@@ -770,6 +827,8 @@ void insm_187(Frame *frame, ByteCodeStream *stream)
 
 获取数组长度
 
+> ins_reference.h
+
 ```c
 void insm_190(Frame *frame, ByteCodeStream *stream)
 {
@@ -789,6 +848,8 @@ void insm_190(Frame *frame, ByteCodeStream *stream)
 
 
 获取类的某个静态属性的值
+
+> ins_reference.h
 
 ```c
 void insm_178(Frame *frame, ByteCodeStream *stream)
@@ -838,6 +899,8 @@ void insm_178(Frame *frame, ByteCodeStream *stream)
 
 而成员属性也是类似的，只不过是从对象中获取属性数组，对象则是从操作数栈中弹出
 
+> ins_reference.h
+
 ```c
 // 对比与静态属性的：Slots *slots = getStaticVars(field->clazz);
 InstanceOOP *oop = (InstanceOOP *)popRef(frame->operandStack);
@@ -851,6 +914,8 @@ Slots slots =  getIntanceVars(oop);
 我们再来实现方法调用，分为几种
 
 JVM使用`INVOKE_SPECIAL`专门用于调用对象的构造方法
+
+> ins_reference.h
 
 ```c
 void insm_183(Frame *frame, ByteCodeStream *stream)
