@@ -30,7 +30,7 @@
     "type": 10,
     "title": "自己动手写JVM-指令集",
     "tags": "instruction custom-jvm c",
-    "summary": "",
+    "summary": "Java虚拟机规范一共规定了205条指令，其中3条是保留指令，在实际运行期间共有202条指令，通过仅仅200多条指令，就能模拟大多数汇编指令做的事情，简单又强大！通过实战代码，我们来感受下这些简易指令如何实现强大功能",
     "coverImage": "",
     "groupName": "jvm",
     "creator": "charpty",
