@@ -209,6 +209,9 @@ def generate_sql_list(files_dict, configs_dict):
             modification_date_ = config["modificationDate"]
             display_order_ = config["displayOrder"]
             word_count_ = len(content)
+            if word_count_ < 20:
+                utils.log_warn("the article '%s' is too short" % name)
+                continue
             meta_sql = meta_sql_format % (
                 name, type_, title_, tags_, summary_, cover_image_,
                 group_name_, creator_,
