@@ -37,5 +37,18 @@
     "creationDate": "2018-12-22 00:00:00",
     "modificationDate": "2018-12-22 00:00:00",
     "displayOrder": 100
+  },
+  {
+    "name": "cjvm-4",
+    "type": 10,
+    "title": "自己动手写JVM-JNI",
+    "tags": "jni custom-jvm c c++",
+    "summary": "JNI是JVM中至关重要的技术之一，它使得Java代码可以调用C/C++、汇编等本地代码，而又能在Java代码中保持统一的接口方法。JDK中自带有许多的native方法（比如System类、Class类中），我们在实现JNI时必须能正确加载这些native方法的C++实现",
+    "coverImage": "",
+    "groupName": "jvm",
+    "creator": "charpty",
+    "creationDate": "2019-01-26 00:00:00",
+    "modificationDate": "2019-01-26 00:00:00",
+    "displayOrder": 100
   }
 ]
