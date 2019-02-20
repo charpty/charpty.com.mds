@@ -47,6 +47,10 @@ JNI只提供了一个框架和一些基本的函数，jdk中则提供了大量�
 
 ## HotSpot启动与JNI实现
 
+
+
+#### 执行HelloWorld程序
+
 HotSpot实现了一个复杂的JNI系统，有几种场景会用到`JVM`的JNI能力，首先是最简单的HelloWorld程序。
 
 ```java
@@ -62,51 +66,98 @@ public class HelloWorld {
 
 这个System里的out变量是屏幕输出的关键，它是在`initPhase1()`（原名称为`initializeSystemClass()`）被初始化的。而函数`initPhase1()`则是在`JVM`完成线程加载后调用的，这个简单的过程就涉及到多次的JNI使用，那我们来看下这个过程中，关于`System.out`的调用顺序，顺便也引出来`JVM`的大致启动顺序。
 
-
-
 ```cpp
 launcher -> JavaMain -> InitializeJVM
-    -> JNI_CreateJavaVM  调用JNI的Invocation API来创建VM
-    -> Threads::create_vm  模块配置并启动VM各类线程，特别是main_thread
-    -> Threads::initialize_java_lang_classes  顾名思义，加载java.lang目录下的关键类，有很多
+    -> JNI_CreateJavaVM()  调用JNI的Invocation API来创建VM
+    -> Threads::create_vm()  模块配置并启动VM各类线程，特别是main_thread
+    -> Threads::initialize_java_lang_classes()  顾名思义，加载java.lang目录下的关键类，有很多
     -- initialize_class(vmSymbols::java_lang_System())  调用<clinit>初始化System类的静态变量和代码块
                                这里会使用C++通过JNI调用Java代码，最终通过一个通用函数JavaCalls::call()
                                这里已经不是第一次调用Java函数了，第一次调用是初始化java.lang.Object
                                Object是所有类的父类，加载任何class前必须先加载它
-                                
-    -> System.registerNatives  java.lang.System静态块中再调用native方法，即使用Java通过JNI调用C++
-                               我们仅关心System.out的情况下，上述两个地方是首次JNI登上舞台的地方 
-    
-    -> InterpreterRuntime::prepare_native_call  尝试获取真实的本地函数首地址，没缓存就要去查找  
-    -> NativeLookup::lookup  查找"java.lang.System.registerNatives()V"方法
-                             实际上第一个查找的本地方法是也还是"java.lang.System.registerNatives()V"
-    
-    -> NativeLookup::lookup_base  如果方法是native却没有设置native函数地址，则需要进行查找
-    -> NativeLookup::lookup_entry  尝试组装各种函数名称（带JNI前缀、带OS文件名后缀等）来查找本地代码
-    -> NativeLookup::lookup_style  查找本地代码的关键逻辑！一共有两种查找方式
+
+    -> System.registerNatives()  java.lang.System静态块中再调用native方法，即使用Java通过JNI调用C++
+                                 我们仅关心System.out的情况下，上述两个地方是首次JNI登上舞台的地方
+                                 调用一个方法也就是前面文章说过的，将其翻译为invoke_*指令并执行该指令即可
+
+    -> BytecodeInterpreter::run()  到这里会执行_invokestatic指令，执行该指令也就是获取具体方法并压入栈中
+                                   具体如何解析则交由InterpreterRuntime::resolve_from_cache()
+                                   
+    -> InterpreterRuntime::resolve_invoke()  进行实际的转换操作，拿操作数index到常量池换取实际的方法信息
+                             这里已经知道方法名字("registerNatives")、方法签名、方法所在class等信息了
+
+    -> LinkResolver::resolve_method()  拿方法元信息换取具体的方法对象"methodHandle"
+                                       这就是真正的Java方法表示了，后续就是要执行这个方法
+                                                                           
+    -> InterpreterRuntime::prepare_native_call()  尝试获取真实的本地函数首地址，没缓存就要去查找 
+                     在解析classfile时，对native方法就进行了标记，所以registerNatives()是走native路线的                                         
+
+    -> NativeLookup::lookup()  查找"java.lang.System.registerNatives()V"方法
+                               实际上第一个查找的本地方法是"java.lang.Object.registerNatives()V"
+
+    -> NativeLookup::lookup_base()  如果方法是native却没有设置native函数地址，则需要进行查找
+    -> NativeLookup::lookup_entry()  尝试组装各种函数名称（带JNI前缀、带OS文件名后缀等）来查找本地代码
+    -> NativeLookup::lookup_style()  查找本地代码的关键逻辑！一共有两种查找方式
           这里"System.registerNatives()"是直接属于JDK默认自带库"os::native_java_library()"其中的函数
           这些函数的特性就是它不是被任何Java的ClassLoader加载的，也就是不是被"System.loadLibrary()"加载的
           这些库都是JDK中的核心，加载甚至在众多Java代码之前，所以必须使用本地直接装载
-           
-    -> System.c:Java_java_lang_System_registerNatives  真正调用到JDK System的native方法实现函数
+          标准的DLL也就是"libjava"，在OSX系统上也就是在"$JAVA_HOME/jre/lib/libjava.dylib"这个文件中
+          所以JVM直接加载的类即非Java ClassLoader加载的类，请求native方法的话，查找过程是比较容易的
+          直接在预定好的库里dlsym()查找函数名称即可          
+
+    -> System.c:Java_java_lang_System_registerNatives()  真正调用到JDK System的native方法实现函数
                                        这个函数基本上等于没做啥事，它也不是我们输出"Hello World"的关键
-    
-    -> thread.cpp:call_initPhase1  阶段1：专门再"初始化"下"java.lang.System"类
+
+    -> thread.cpp:call_initPhase1()  阶段1：专门再"初始化"下"java.lang.System"类
             所以"System"类确实至关重要，这次主要是调用其initPhase1()函数，初始化一些关键的系统参数和变量
             最终通过通用函数JavaCalls::call_static()来调用到java.lang.System.initPhase1()
-    
-    -> System.initPhase1  之前的initializeSystemClass()函数，进行了一阶段的许多初始化工作
+
+    -> System.initPhase1()  之前的initializeSystemClass()函数，进行了一阶段的许多初始化工作
          我们主要关心何时对System.out进行了设置，其实关键也就是在JVM初始化完输出流后通知Java也完成输出流初始化
          关键语句：setOut0(newPrintStream(fdOut, props.getProperty("sun.stdout.encoding")));                           
+         其中最关键的是fdOut，它是文件输出流，自带有一个默认的FileDescriptor文件描述符
+         FileDescriptor绑定了Windows的文件句柄或者Unix的标准输出流
 
-    ->     
-                 
-                                               
+    -> new FileDescriptor(1)  1代表标准输出流
+    -> FileDescriptor.getAppend(1) 调用Java_java_io_FileDescriptor_getAppend()，获取文件输出流的状态
+                                   在Windows下还需要调用getHandle(1)来初始化文件句柄
+
+    -> out.println("Hello World")  多层封装，最终调用FileOutputStream的write方法，本质上也就是文件流输出
+    -> FileOutputStream.writeBytes()  调用native方法
+    -> FileDescriptor_md.c:Java_java_io_FileOutputStream_writeBytes()  natvie方法的本地实现
+    -> io_util.c:writeBytes() -> io_util.c:handleWrite() -> write()系统调用
 ```
 
-// TODO 综合解释
+上述我们看到为了能做到输出Hello World，和其相关的步骤还是比较多的，这个例子主要看的是几个点。
+
+##### Java方法调用一个native方法，如何实现？
+
+```java
+Java调用native函数a (被javac翻译为invokestatic #a)
+     -- JVM解析classfile时将方法a标记为native
+     -> JVM执行invokestatic指令时首先根据index来获取到方法信息
+     -> 执行方法时，如果是native则需要查找native函数入口地址(不是native就直接执行属性表中的代码)
+     -> 如果方法是被非Java ClassLoader加载的类调用的，则默认是系统native方法，直接到系统动态库中查找
+     -> 执行native
+```
 
 
+
+##### JVM启动时需要调用Java代码做哪些事情
+
+- 要提前初始化`java.lang`目录下的重要类，包括本例用到`java.lang.System`类
+
+- 本例中还需要调用`System.initPhase1`方法来初始化`System.out`变量
+
+- 还有最重要的，它需要调用Java代码的main函数
+
+
+
+JVM的启动过程较为复杂，`HelloWorld`的例子围绕`System`类和`System.out`变量对Java调用C++代码进行了讲解，也稍微提到了C++调用Java代码。
+
+
+
+#### 调用自定义的本地库
 
 经过第一个例子，我们明白了JDK自带的这类动态库加载链接的方式，接下来看一下我们自行编写的动态库加载方式
 
@@ -118,15 +169,24 @@ public class MyNumberDLLTest {
         System.out.println(getNumber());
     }
 
+    // 本地代码实现就是返回个1而已
     public static native int getNumber();
 }
 ```
 
 代码很简单，也可以在静态块`loadLibrary()`，但在代码流程里装载更能直观反应问题，按照这个过程，我们来看下`JVM`又是如何做到动态加载这个`number`库的。
 
+将写好的C代码编译成动态库之后，输出一个名为`libnumber.dylib`的共享库，随后我们在Java代码中加载这个共享库并执行其中的`getNumber()`方法。
 
+```java
+launcher -> JavaMain -> InitializeJVM
+ -> JNI_CreateJavaVM() 
+ -> Threads::create_vm() 
+ -> Threads::initialize_java_lang_classes() 
+ -> initialize_class(vmSymbols::java_lang_System())  也是要加载关键的System类，过程中上面讲过的就省略了
+ -> 
 
-
+```
 
 
 
